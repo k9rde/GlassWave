@@ -1,0 +1,25 @@
+<resources>
+    <string name="app_name">GlassWave</string>
+    <string name="app_subtitle">ووكي توكي فوري</string>
+    <string name="status_ready">جاهز للإرسال</string>
+    <string name="status_transmitting">جاري البث المباشر…</string>
+    <string name="status_always_on">التشغيل الدائم مُفعّل</string>
+    <string name="status_always_off">الإغلاق الدائم مُفعّل</string>
+    <string name="status_receiving">يستقبل صوتاً الآن…</string>
+    <string name="ptt_hint">اضغط مطوّلاً للتحدث</string>
+    <string name="ptt_live_hint">أنت على الهواء الآن</string>
+    <string name="ptt_locked_on_hint">الميكروفون مفتوح دائماً</string>
+    <string name="ptt_locked_off_hint">الميكروفون والصوت مغلقان</string>
+    <string name="btn_always_on">تشغيل دائم</string>
+    <string name="btn_always_off">إغلاق دائم</string>
+    <string name="btn_always_on_desc">فتح الميكروفون للبث المستمر</string>
+    <string name="btn_always_off_desc">كتم الميكروفون والاستقبال بالكامل</string>
+    <string name="channel_label">القناة النشطة</string>
+    <string name="lan_mode_badge">بث محلي Wi-Fi</string>
+    <string name="roger_beep_on">نغمة الإرسال</string>
+    <string name="permission_title">مطلوب إذن الميكروفون</string>
+    <string name="permission_desc">للتحدث المباشر مع أصدقائك عبر اللاسلكي، يرجى السماح بالوصول إلى الميكروفون.</string>
+    <string name="permission_grant">السماح الآن</string>
+    <string name="peers_online">%1$d متصل على القناة</string>
+    <string name="peers_waiting">بانتظار الأصدقاء على نفس الشبكة</string>
+</resources>

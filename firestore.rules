@@ -1,0 +1,129 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Global default-deny safety net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidMemberList(listVal) {
+      return listVal is list &&
+             listVal.size() >= 1 &&
+             listVal.size() <= 25 &&
+             listVal[0] is string;
+    }
+
+    function isValidRoom(data) {
+      return data.keys().hasAll([
+               'ownerId', 'roomCode', 'roomName', 'memberUids',
+               'activeSpeakerUid', 'activeSpeakerName', 'createdAt', 'updatedAt'
+             ]) &&
+             data.keys().hasOnly([
+               'ownerId', 'roomCode', 'roomName', 'memberUids',
+               'activeSpeakerUid', 'activeSpeakerName', 'createdAt', 'updatedAt'
+             ]) &&
+             data.ownerId is string && data.ownerId.size() >= 1 && data.ownerId.size() <= 128 &&
+             data.roomCode is string && data.roomCode.size() >= 4 && data.roomCode.size() <= 12 &&
+             data.roomName is string && data.roomName.size() >= 1 && data.roomName.size() <= 60 &&
+             isValidMemberList(data.memberUids) &&
+             data.activeSpeakerUid is string && data.activeSpeakerUid.size() <= 128 &&
+             data.activeSpeakerName is string && data.activeSpeakerName.size() <= 80 &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidPacket(data) {
+      return data.keys().hasAll([
+               'senderUid', 'senderName', 'audioBase64', 'memberUids', 'createdAt'
+             ]) &&
+             data.keys().hasOnly([
+               'senderUid', 'senderName', 'audioBase64', 'memberUids', 'createdAt'
+             ]) &&
+             data.senderUid is string && data.senderUid.size() >= 1 && data.senderUid.size() <= 128 &&
+             data.senderName is string && data.senderName.size() >= 1 && data.senderName.size() <= 80 &&
+             data.audioBase64 is string && data.audioBase64.size() >= 1 && data.audioBase64.size() <= 64000 &&
+             isValidMemberList(data.memberUids) &&
+             data.createdAt is timestamp && data.createdAt <= request.time;
+    }
+
+    match /rooms/{roomId} {
+      // Allow get by exact roomId so friends with the room code can join
+      allow get: if isSignedIn() && isValidId(roomId);
+      // List strictly scoped to rooms where the user is a member
+      allow list: if isSignedIn() && request.auth.uid in resource.data.memberUids;
+
+      allow create: if isSignedIn() &&
+                       isValidId(roomId) &&
+                       isValidRoom(incoming()) &&
+                       incoming().ownerId == request.auth.uid &&
+                       request.auth.uid in incoming().memberUids;
+
+      allow update: if isSignedIn() &&
+                       isValidId(roomId) &&
+                       isValidRoom(incoming()) &&
+                       incoming().ownerId == existing().ownerId &&
+                       incoming().roomCode == existing().roomCode &&
+                       incoming().createdAt == existing().createdAt &&
+                       (
+                         // Action 1: Join room by adding self to memberUids
+                         (
+                           incoming().diff(existing()).affectedKeys().hasOnly(['memberUids', 'updatedAt']) &&
+                           request.auth.uid in incoming().memberUids &&
+                           incoming().memberUids.hasAll(existing().memberUids) &&
+                           incoming().memberUids.size() <= existing().memberUids.size() + 1
+                         ) ||
+                         // Action 2: Update active speaker status (members only)
+                         (
+                           request.auth.uid in existing().memberUids &&
+                           incoming().diff(existing()).affectedKeys().hasOnly(['activeSpeakerUid', 'activeSpeakerName', 'updatedAt'])
+                         )
+                       );
+
+      allow delete: if isSignedIn() &&
+                       isValidId(roomId) &&
+                       existing().ownerId == request.auth.uid;
+
+      match /packets/{packetId} {
+        allow get: if isSignedIn() &&
+                      isValidId(roomId) &&
+                      isValidId(packetId) &&
+                      request.auth.uid in resource.data.memberUids;
+
+        allow list: if isSignedIn() &&
+                       request.auth.uid in resource.data.memberUids;
+
+        allow create: if isSignedIn() &&
+                         isValidId(roomId) &&
+                         isValidId(packetId) &&
+                         isValidPacket(incoming()) &&
+                         incoming().senderUid == request.auth.uid &&
+                         request.auth.uid in incoming().memberUids &&
+                         exists(/databases/$(database)/documents/rooms/$(roomId)) &&
+                         request.auth.uid in get(/databases/$(database)/documents/rooms/$(roomId)).data.memberUids;
+
+        allow update: if false;
+
+        allow delete: if isSignedIn() &&
+                         isValidId(roomId) &&
+                         isValidId(packetId) &&
+                         existing().senderUid == request.auth.uid;
+      }
+    }
+  }
+}

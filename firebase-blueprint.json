@@ -1,0 +1,100 @@
+{
+  "entities": {
+    "Room": {
+      "title": "Room",
+      "description": "A cloud walkie-talkie room shared by friends across any network.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "description": "UID of the room creator"
+        },
+        "roomCode": {
+          "type": "string",
+          "description": "Short 4-8 character room code shared with friends"
+        },
+        "roomName": {
+          "type": "string",
+          "description": "Display name of the room"
+        },
+        "memberUids": {
+          "type": "array",
+          "description": "Bounded list of member UIDs (max 25)"
+        },
+        "activeSpeakerUid": {
+          "type": "string",
+          "description": "UID of the currently speaking member, or empty string"
+        },
+        "activeSpeakerName": {
+          "type": "string",
+          "description": "Display name of the currently speaking member, or empty string"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when room was created (FieldValue.serverTimestamp())"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of last update (FieldValue.serverTimestamp())"
+        }
+      },
+      "required": [
+        "ownerId",
+        "roomCode",
+        "roomName",
+        "memberUids",
+        "activeSpeakerUid",
+        "activeSpeakerName",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "VoicePacket": {
+      "title": "VoicePacket",
+      "description": "A live PCM audio chunk broadcast to all members of a room.",
+      "type": "object",
+      "properties": {
+        "senderUid": {
+          "type": "string",
+          "description": "UID of the speaking user"
+        },
+        "senderName": {
+          "type": "string",
+          "description": "Display name of the speaking user"
+        },
+        "audioBase64": {
+          "type": "string",
+          "description": "Base64-encoded 8kHz 16-bit mono PCM audio chunk"
+        },
+        "memberUids": {
+          "type": "array",
+          "description": "Denormalized member UIDs from the parent room for local list authorization"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when packet was sent (FieldValue.serverTimestamp())"
+        }
+      },
+      "required": [
+        "senderUid",
+        "senderName",
+        "audioBase64",
+        "memberUids",
+        "createdAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/rooms/{roomId}": {
+      "schema": { "$ref": "#/entities/Room" },
+      "description": "Cloud walkie-talkie rooms"
+    },
+    "/rooms/{roomId}/packets/{packetId}": {
+      "schema": { "$ref": "#/entities/VoicePacket" },
+      "description": "Real-time voice audio chunks inside a room"
+    }
+  }
+}

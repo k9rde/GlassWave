@@ -1,0 +1,6 @@
+{
+  "name": "GlassWave",
+  "description": "تطبيق ووكي توكي فوري بتصميم زجاجي فاخر مستوحى من أحدث إصدارات آيفون مع أوضاع الضغط للتحدث والتشغيل الدائم والإغلاق الدائم.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

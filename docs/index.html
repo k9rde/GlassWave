@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GlassWave — تحميل تطبيق الووكي توكي الفوري</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&family=JetBrains+Mono:wght@600&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg-deep: #050814;
+      --bg-mid: #0b1226;
+      --cyan: #38bdf8;
+      --sapphire: #3b82f6;
+      --emerald: #10b981;
+      --ruby: #f43f5e;
+      --text-primary: #f8fafc;
+      --text-secondary: #94a3b8;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Cairo', system-ui, -apple-system, sans-serif;
+      background: radial-gradient(circle at 20% 20%, rgba(59, 130, 246, 0.25), transparent 45%),
+                  radial-gradient(circle at 80% 80%, rgba(16, 185, 129, 0.22), transparent 45%),
+                  linear-gradient(180deg, var(--bg-deep), var(--bg-mid), var(--bg-deep));
+      color: var(--text-primary);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+
+    .glass-card {
+      width: 100%;
+      max-width: 480px;
+      padding: 32px 26px;
+      border-radius: 32px;
+      background: linear-gradient(135deg, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0.04));
+      border: 1.2px solid rgba(255, 255, 255, 0.26);
+      backdrop-filter: blur(26px);
+      -webkit-backdrop-filter: blur(26px);
+      box-shadow: 0 28px 80px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.35);
+      text-align: center;
+    }
+
+    .app-badge {
+      width: 86px;
+      height: 86px;
+      margin: 0 auto 18px;
+      border-radius: 24px;
+      background: linear-gradient(135deg, rgba(56, 189, 248, 0.36), rgba(59, 130, 246, 0.14));
+      border: 1.5px solid rgba(255, 255, 255, 0.45);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 12px 32px rgba(56, 189, 248, 0.28);
+      font-size: 38px;
+    }
+
+    h1 {
+      font-size: 2rem;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      margin-bottom: 6px;
+    }
+
+    .subtitle {
+      color: var(--text-secondary);
+      font-size: 0.98rem;
+      line-height: 1.6;
+      margin-bottom: 22px;
+    }
+
+    .pills {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      justify-content: center;
+      margin-bottom: 26px;
+    }
+
+    .pill {
+      padding: 6px 12px;
+      border-radius: 999px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      color: var(--text-primary);
+    }
+
+    .pill.mono {
+      font-family: 'JetBrains Mono', monospace;
+      color: var(--cyan);
+    }
+
+    .download-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      width: 100%;
+      padding: 16px 20px;
+      border-radius: 20px;
+      text-decoration: none;
+      font-size: 1.08rem;
+      font-weight: 800;
+      color: var(--bg-deep);
+      background: linear-gradient(135deg, var(--cyan), #7dd3fc);
+      box-shadow: 0 12px 30px rgba(56, 189, 248, 0.38);
+      transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    .download-btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 16px 36px rgba(56, 189, 248, 0.5);
+    }
+
+    .features {
+      margin-top: 24px;
+      text-align: right;
+      display: grid;
+      gap: 10px;
+    }
+
+    .feature {
+      padding: 12px 14px;
+      border-radius: 16px;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      font-size: 0.9rem;
+      color: var(--text-secondary);
+    }
+
+    .feature strong {
+      color: var(--text-primary);
+    }
+
+    .footer {
+      margin-top: 22px;
+      font-size: 0.78rem;
+      color: var(--text-secondary);
+      opacity: 0.8;
+    }
+  </style>
+</head>
+<body>
+  <main class="glass-card">
+    <div class="app-badge" aria-hidden="true">🎙️</div>
+    <h1>GlassWave</h1>
+    <p class="subtitle">
+      تطبيق ووكي توكي سحابي فوري بتصميم زجاجي فاخر (Liquid Glass) — تحدّث مع أصدقائك مباشرة من أي مكان وعلى أي شبكة.
+    </p>
+
+    <div class="pills">
+      <span class="pill mono">120Hz Smooth</span>
+      <span class="pill">بث سحابي فوري</span>
+      <span class="pill">تشغيل دائم &bull; إغلاق دائم</span>
+    </div>
+
+    <a class="download-btn" href="./glasswave.apk" download="glasswave.apk">
+      <span>تحميل التطبيق للأندرويد (APK)</span>
+    </a>
+
+    <section class="features">
+      <div class="feature">
+        <strong>الضغط للتحدث (Push-to-Talk):</strong> زر زجاجي فوري يتفاعل مع صوتك بموجات حية.
+      </div>
+      <div class="feature">
+        <strong>غرف سحابية برمز مشاركة:</strong> أنشئ غرفة وشارك الرمز مع أصدقائك ليسمعوك من أي منزل أو شبكة.
+      </div>
+      <div class="feature">
+        <strong>تشغيل دائم وإغلاق دائم:</strong> تحكم كامل بفتح الميكروفون باستمرار أو كتم الصوت والاستقبال بالكامل.
+      </div>
+    </section>
+
+    <p class="footer">الإصدار 1.0 &bull; Android 7.0+ &bull; GlassWave</p>
+  </main>
+</body>
+</html>
