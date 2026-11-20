@@ -4,6 +4,7 @@ import android.app.Application
 import android.graphics.Color
 import android.os.Build
 import android.os.Bundle
+import android.view.KeyEvent
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
@@ -20,6 +21,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.credentials.CredentialManager
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.ui.HardwarePttBridge
 import com.example.ui.WalkieTalkieScreen
 import com.example.ui.WalkieTalkieViewModel
 import com.example.ui.auth.AuthScreen
@@ -47,6 +49,26 @@ class MainActivity : ComponentActivity() {
                 AppContent(maxRefreshRate = maxRefreshRate)
             }
         }
+    }
+
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (HardwarePttBridge.isEnabled &&
+            (event.keyCode == KeyEvent.KEYCODE_VOLUME_UP || event.keyCode == KeyEvent.KEYCODE_VOLUME_DOWN)
+        ) {
+            when (event.action) {
+                KeyEvent.ACTION_DOWN -> {
+                    if (event.repeatCount == 0) {
+                        HardwarePttBridge.onVolumeDownPress?.invoke()
+                    }
+                    return true
+                }
+                KeyEvent.ACTION_UP -> {
+                    HardwarePttBridge.onVolumeDownRelease?.invoke()
+                    return true
+                }
+            }
+        }
+        return super.dispatchKeyEvent(event)
     }
 
     private fun requestHighestRefreshRate(): Int {

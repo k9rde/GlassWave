@@ -29,19 +29,30 @@ service cloud.firestore {
              listVal[0] is string;
     }
 
+    function isValidMutedList(listVal) {
+      return listVal is list && listVal.size() <= 25;
+    }
+
     function isValidRoom(data) {
       return data.keys().hasAll([
                'ownerId', 'roomCode', 'roomName', 'memberUids',
                'activeSpeakerUid', 'activeSpeakerName', 'createdAt', 'updatedAt'
              ]) &&
              data.keys().hasOnly([
-               'ownerId', 'roomCode', 'roomName', 'memberUids',
+               'ownerId', 'roomCode', 'roomName', 'roomPasscode', 'memberUids', 'memberNames',
+               'mutedUids', 'lastPingUid', 'lastPingName', 'lastPingAt',
                'activeSpeakerUid', 'activeSpeakerName', 'createdAt', 'updatedAt'
              ]) &&
              data.ownerId is string && data.ownerId.size() >= 1 && data.ownerId.size() <= 128 &&
              data.roomCode is string && data.roomCode.size() >= 4 && data.roomCode.size() <= 12 &&
              data.roomName is string && data.roomName.size() >= 1 && data.roomName.size() <= 60 &&
+             (!('roomPasscode' in data) || (data.roomPasscode is string && data.roomPasscode.size() <= 32)) &&
              isValidMemberList(data.memberUids) &&
+             (!('memberNames' in data) || (data.memberNames is map && data.memberNames.size() <= 25)) &&
+             (!('mutedUids' in data) || isValidMutedList(data.mutedUids)) &&
+             (!('lastPingUid' in data) || (data.lastPingUid is string && data.lastPingUid.size() <= 128)) &&
+             (!('lastPingName' in data) || (data.lastPingName is string && data.lastPingName.size() <= 80)) &&
+             (!('lastPingAt' in data) || data.lastPingAt is int) &&
              data.activeSpeakerUid is string && data.activeSpeakerUid.size() <= 128 &&
              data.activeSpeakerName is string && data.activeSpeakerName.size() <= 80 &&
              data.createdAt is timestamp && data.createdAt <= request.time &&
@@ -58,6 +69,20 @@ service cloud.firestore {
              data.senderUid is string && data.senderUid.size() >= 1 && data.senderUid.size() <= 128 &&
              data.senderName is string && data.senderName.size() >= 1 && data.senderName.size() <= 80 &&
              data.audioBase64 is string && data.audioBase64.size() >= 1 && data.audioBase64.size() <= 64000 &&
+             isValidMemberList(data.memberUids) &&
+             data.createdAt is timestamp && data.createdAt <= request.time;
+    }
+
+    function isValidChatMessage(data) {
+      return data.keys().hasAll([
+               'senderUid', 'senderName', 'text', 'memberUids', 'createdAt'
+             ]) &&
+             data.keys().hasOnly([
+               'senderUid', 'senderName', 'text', 'memberUids', 'createdAt'
+             ]) &&
+             data.senderUid is string && data.senderUid.size() >= 1 && data.senderUid.size() <= 128 &&
+             data.senderName is string && data.senderName.size() >= 1 && data.senderName.size() <= 80 &&
+             data.text is string && data.text.size() >= 1 && data.text.size() <= 400 &&
              isValidMemberList(data.memberUids) &&
              data.createdAt is timestamp && data.createdAt <= request.time;
     }
@@ -83,15 +108,18 @@ service cloud.firestore {
                        (
                          // Action 1: Join room by adding self to memberUids
                          (
-                           incoming().diff(existing()).affectedKeys().hasOnly(['memberUids', 'updatedAt']) &&
+                           incoming().diff(existing()).affectedKeys().hasOnly(['memberUids', 'memberNames', 'updatedAt']) &&
                            request.auth.uid in incoming().memberUids &&
                            incoming().memberUids.hasAll(existing().memberUids) &&
                            incoming().memberUids.size() <= existing().memberUids.size() + 1
                          ) ||
-                         // Action 2: Update active speaker status (members only)
+                         // Action 2: Update active speaker, display name, or send Ping (members only)
                          (
                            request.auth.uid in existing().memberUids &&
-                           incoming().diff(existing()).affectedKeys().hasOnly(['activeSpeakerUid', 'activeSpeakerName', 'updatedAt'])
+                           incoming().diff(existing()).affectedKeys().hasOnly([
+                             'activeSpeakerUid', 'activeSpeakerName', 'memberNames',
+                             'lastPingUid', 'lastPingName', 'lastPingAt', 'updatedAt'
+                           ])
                          ) ||
                          // Action 3: Leave room by removing only self from memberUids
                          (
@@ -99,7 +127,15 @@ service cloud.firestore {
                            !(request.auth.uid in incoming().memberUids) &&
                            existing().memberUids.hasAll(incoming().memberUids) &&
                            incoming().memberUids.size() == existing().memberUids.size() - 1 &&
-                           incoming().diff(existing()).affectedKeys().hasOnly(['memberUids', 'updatedAt'])
+                           incoming().diff(existing()).affectedKeys().hasOnly(['memberUids', 'memberNames', 'updatedAt'])
+                         ) ||
+                         // Action 4: Owner moderation (mute/unmute, kick member, update passcode)
+                         (
+                           request.auth.uid == existing().ownerId &&
+                           existing().ownerId in incoming().memberUids &&
+                           incoming().diff(existing()).affectedKeys().hasOnly([
+                             'memberUids', 'memberNames', 'mutedUids', 'roomPasscode', 'updatedAt'
+                           ])
                          )
                        );
 
@@ -130,6 +166,32 @@ service cloud.firestore {
         allow delete: if isSignedIn() &&
                          isValidId(roomId) &&
                          isValidId(packetId) &&
+                         existing().senderUid == request.auth.uid;
+      }
+
+      match /messages/{messageId} {
+        allow get: if isSignedIn() &&
+                      isValidId(roomId) &&
+                      isValidId(messageId) &&
+                      request.auth.uid in resource.data.memberUids;
+
+        allow list: if isSignedIn() &&
+                       request.auth.uid in resource.data.memberUids;
+
+        allow create: if isSignedIn() &&
+                         isValidId(roomId) &&
+                         isValidId(messageId) &&
+                         isValidChatMessage(incoming()) &&
+                         incoming().senderUid == request.auth.uid &&
+                         request.auth.uid in incoming().memberUids &&
+                         exists(/databases/$(database)/documents/rooms/$(roomId)) &&
+                         request.auth.uid in get(/databases/$(database)/documents/rooms/$(roomId)).data.memberUids;
+
+        allow update: if false;
+
+        allow delete: if isSignedIn() &&
+                         isValidId(roomId) &&
+                         isValidId(messageId) &&
                          existing().senderUid == request.auth.uid;
       }
     }

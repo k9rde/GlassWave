@@ -13,7 +13,13 @@ data class CloudRoom(
     val ownerId: String = "",
     val roomCode: String = "",
     val roomName: String = "",
+    val roomPasscode: String = "",
     val memberUids: List<String> = emptyList(),
+    val memberNames: Map<String, String> = emptyMap(),
+    val mutedUids: List<String> = emptyList(),
+    val lastPingUid: String = "",
+    val lastPingName: String = "",
+    val lastPingAt: Long = 0L,
     val activeSpeakerUid: String = "",
     val activeSpeakerName: String = "",
     @ServerTimestamp val createdAt: Timestamp? = null,
@@ -27,6 +33,17 @@ data class VoicePacket(
     val senderUid: String = "",
     val senderName: String = "",
     val audioBase64: String = "",
+    val memberUids: List<String> = emptyList(),
+    @ServerTimestamp val createdAt: Timestamp? = null
+)
+
+@Keep
+@IgnoreExtraProperties
+data class RoomChatMessage(
+    @DocumentId val id: String = "",
+    val senderUid: String = "",
+    val senderName: String = "",
+    val text: String = "",
     val memberUids: List<String> = emptyList(),
     @ServerTimestamp val createdAt: Timestamp? = null
 )

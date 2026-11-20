@@ -47,6 +47,12 @@ class WalkieTalkieAudioEngine {
     @Volatile
     private var isMutedCompletely: Boolean = false
 
+    @Volatile
+    var rogerBeepStyle: String = "CLASSIC"
+
+    @Volatile
+    var radioFxEnabled: Boolean = false
+
     fun setMuted(muted: Boolean) {
         isMutedCompletely = muted
         if (muted) {
@@ -145,9 +151,10 @@ class WalkieTalkieAudioEngine {
             try {
                 val pcm = Base64.decode(audioBase64, Base64.NO_WRAP)
                 if (pcm.isEmpty()) return@launch
+                val processed = if (radioFxEnabled) applyRadioFx(pcm) else pcm
                 synchronized(playbackLock) {
                     val track = ensurePlaybackTrack()
-                    track?.write(pcm, 0, pcm.size)
+                    track?.write(processed, 0, processed.size)
                 }
                 _isReceiving.value = true
                 receiveDecayJob?.cancel()
@@ -207,11 +214,19 @@ class WalkieTalkieAudioEngine {
     fun playChirp(start: Boolean) {
         scope.launch {
             try {
-                val durationMs = if (start) 75 else 110
+                val style = rogerBeepStyle
+                val durationMs = when (style) {
+                    "POLICE" -> if (start) 95 else 150
+                    "MODERN" -> if (start) 65 else 90
+                    else -> if (start) 75 else 110
+                }
                 val sampleCount = (SAMPLE_RATE * durationMs) / 1000
                 val pcm = ShortArray(sampleCount)
-                val freq1 = if (start) 880.0 else 1180.0
-                val freq2 = if (start) 1240.0 else 760.0
+                val (freq1, freq2) = when (style) {
+                    "POLICE" -> if (start) 1050.0 to 1580.0 else 1580.0 to 920.0
+                    "MODERN" -> if (start) 660.0 to 990.0 else 990.0 to 660.0
+                    else -> if (start) 880.0 to 1240.0 else 1180.0 to 760.0
+                }
 
                 for (i in 0 until sampleCount) {
                     val progress = i.toDouble() / sampleCount
@@ -220,32 +235,72 @@ class WalkieTalkieAudioEngine {
                     val sample = sin(2.0 * PI * freq * i / SAMPLE_RATE) * envelope * 9000.0
                     pcm[i] = sample.toInt().toShort()
                 }
-
-                val track = AudioTrack.Builder()
-                    .setAudioAttributes(
-                        AudioAttributes.Builder()
-                            .setUsage(AudioAttributes.USAGE_ASSISTANCE_SONIFICATION)
-                            .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                            .build()
-                    )
-                    .setAudioFormat(
-                        AudioFormat.Builder()
-                            .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
-                            .setSampleRate(SAMPLE_RATE)
-                            .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
-                            .build()
-                    )
-                    .setBufferSizeInBytes(pcm.size * 2)
-                    .setTransferMode(AudioTrack.MODE_STATIC)
-                    .build()
-
-                track.write(pcm, 0, pcm.size)
-                track.play()
-                delay(durationMs.toLong() + 40L)
-                track.stop()
-                track.release()
+                playStaticTone(pcm, durationMs)
             } catch (_: Exception) {}
         }
+    }
+
+    fun playPingSiren() {
+        if (isMutedCompletely) return
+        scope.launch {
+            try {
+                val durationMs = 360
+                val sampleCount = (SAMPLE_RATE * durationMs) / 1000
+                val pcm = ShortArray(sampleCount)
+                for (i in 0 until sampleCount) {
+                    val progress = i.toDouble() / sampleCount
+                    val freq = if (progress < 0.33 || progress > 0.66) 1420.0 else 980.0
+                    val envelope = sin(PI * ((progress * 3.0) % 1.0))
+                    val sample = sin(2.0 * PI * freq * i / SAMPLE_RATE) * envelope * 11500.0
+                    pcm[i] = sample.toInt().toShort()
+                }
+                playStaticTone(pcm, durationMs)
+            } catch (_: Exception) {}
+        }
+    }
+
+    private suspend fun playStaticTone(pcm: ShortArray, durationMs: Int) {
+        val track = AudioTrack.Builder()
+            .setAudioAttributes(
+                AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_ASSISTANCE_SONIFICATION)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                    .build()
+            )
+            .setAudioFormat(
+                AudioFormat.Builder()
+                    .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+                    .setSampleRate(SAMPLE_RATE)
+                    .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
+                    .build()
+            )
+            .setBufferSizeInBytes(pcm.size * 2)
+            .setTransferMode(AudioTrack.MODE_STATIC)
+            .build()
+
+        track.write(pcm, 0, pcm.size)
+        track.play()
+        delay(durationMs.toLong() + 45L)
+        track.stop()
+        track.release()
+    }
+
+    private fun applyRadioFx(pcm: ByteArray): ByteArray {
+        val out = ByteArray(pcm.size)
+        var prev = 0
+        var i = 0
+        while (i + 1 < pcm.size) {
+            val low = pcm[i].toInt() and 0xFF
+            val high = pcm[i + 1].toInt() shl 8
+            val sample = (high or low).toShort().toInt()
+            // Crisp walkie-talkie high-pass + soft-clip saturation
+            val filtered = ((sample - (prev * 0.45f).toInt()) * 1.18f).toInt().coerceIn(-22000, 22000)
+            prev = sample
+            out[i] = (filtered and 0xFF).toByte()
+            out[i + 1] = ((filtered shr 8) and 0xFF).toByte()
+            i += 2
+        }
+        return out
     }
 
     fun release() {

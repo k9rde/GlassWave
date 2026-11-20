@@ -7,6 +7,7 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.view.WindowManager
 import android.widget.Toast
@@ -32,25 +33,35 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Logout
+import androidx.compose.material.icons.automirrored.rounded.Send
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Bolt
+import androidx.compose.material.icons.rounded.Campaign
+import androidx.compose.material.icons.rounded.Chat
 import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.GroupAdd
 import androidx.compose.material.icons.rounded.NotificationsActive
 import androidx.compose.material.icons.rounded.NotificationsOff
+import androidx.compose.material.icons.rounded.PersonRemove
 import androidx.compose.material.icons.rounded.Podcasts
 import androidx.compose.material.icons.rounded.PowerSettingsNew
 import androidx.compose.material.icons.rounded.Public
 import androidx.compose.material.icons.rounded.Radio
+import androidx.compose.material.icons.rounded.Replay
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Share
+import androidx.compose.material.icons.rounded.SystemUpdate
 import androidx.compose.material.icons.rounded.VolumeOff
+import androidx.compose.material.icons.rounded.VolumeUp
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -108,6 +119,8 @@ fun WalkieTalkieScreen(
     var showCreateDialog by remember { mutableStateOf(false) }
     var showJoinDialog by remember { mutableStateOf(false) }
     var showSettings by remember { mutableStateOf(false) }
+    var showMembersDialog by remember { mutableStateOf(false) }
+    var showChatDialog by remember { mutableStateOf(false) }
     var txSeconds by remember { mutableIntStateOf(0) }
 
     val requiredPermissions = remember {
@@ -153,6 +166,20 @@ fun WalkieTalkieScreen(
         }
         onDispose {
             window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
+    }
+
+    // Hardware Volume Button PTT registration
+    DisposableEffect(state.settings.volumeKeyPttEnabled, state.mode, state.activeRoom != null) {
+        HardwarePttBridge.isEnabled = state.settings.volumeKeyPttEnabled &&
+            state.mode == RadioMode.PUSH_TO_TALK &&
+            state.activeRoom != null
+        HardwarePttBridge.onVolumeDownPress = { viewModel.onPttPressStart() }
+        HardwarePttBridge.onVolumeDownRelease = { viewModel.onPttPressEnd() }
+        onDispose {
+            HardwarePttBridge.isEnabled = false
+            HardwarePttBridge.onVolumeDownPress = null
+            HardwarePttBridge.onVolumeDownRelease = null
         }
     }
 
@@ -228,8 +255,125 @@ fun WalkieTalkieScreen(
                         putExtra(Intent.EXTRA_TEXT, shareText)
                     }
                     context.startActivity(Intent.createChooser(intent, "مشاركة دعوة الغرفة"))
-                }
+                },
+                onShowMembers = { showMembersDialog = true }
             )
+
+            // Quick Actions Row (Ping, Replay Last Voice, Room Chat)
+            if (state.activeRoom != null) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    LiquidGlassSurface(
+                        modifier = Modifier
+                            .weight(1f)
+                            .testTag("ping_room_button")
+                            .clickable {
+                                viewModel.sendPing()
+                                Toast.makeText(context, "تم إرسال نداء عاجل للغرفة", Toast.LENGTH_SHORT).show()
+                            },
+                        shape = RoundedCornerShape(16.dp),
+                        accentColor = RubyCrimson,
+                        tintAlpha = 0.14f,
+                        borderAlpha = 0.35f
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 9.dp),
+                            horizontalArrangement = Arrangement.Center,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(Icons.Rounded.Campaign, contentDescription = null, tint = RubyCrimson, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.size(5.dp))
+                            Text("نداء", style = MaterialTheme.typography.labelMedium, color = GlassWhite, fontWeight = FontWeight.Bold)
+                        }
+                    }
+
+                    LiquidGlassSurface(
+                        modifier = Modifier
+                            .weight(1f)
+                            .alpha(if (state.canReplayVoice) 1f else 0.45f)
+                            .testTag("replay_voice_button")
+                            .clickable(enabled = state.canReplayVoice) {
+                                viewModel.replayLastVoiceMessage()
+                                Toast.makeText(context, "إعادة صوت: ${state.lastVoiceSenderName}", Toast.LENGTH_SHORT).show()
+                            },
+                        shape = RoundedCornerShape(16.dp),
+                        accentColor = LiquidCyan,
+                        tintAlpha = 0.14f,
+                        borderAlpha = 0.35f
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 9.dp),
+                            horizontalArrangement = Arrangement.Center,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(Icons.Rounded.Replay, contentDescription = null, tint = LiquidCyan, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.size(5.dp))
+                            Text("إعادة", style = MaterialTheme.typography.labelMedium, color = GlassWhite, fontWeight = FontWeight.Bold)
+                        }
+                    }
+
+                    LiquidGlassSurface(
+                        modifier = Modifier
+                            .weight(1f)
+                            .testTag("open_chat_button")
+                            .clickable { showChatDialog = true },
+                        shape = RoundedCornerShape(16.dp),
+                        accentColor = LuminousEmerald,
+                        tintAlpha = 0.14f,
+                        borderAlpha = 0.35f
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 9.dp),
+                            horizontalArrangement = Arrangement.Center,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(Icons.Rounded.Chat, contentDescription = null, tint = LuminousEmerald, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.size(5.dp))
+                            val chatLabel = if (state.chatMessages.isNotEmpty()) "دردشة (${state.chatMessages.size})" else "دردشة"
+                            Text(chatLabel, style = MaterialTheme.typography.labelMedium, color = GlassWhite, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
+
+            // Emergency Ping Banner
+            AnimatedVisibility(
+                visible = state.pingBannerMessage != null,
+                enter = fadeIn(),
+                exit = fadeOut()
+            ) {
+                LiquidGlassSurface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(18.dp),
+                    accentColor = RubyCrimson,
+                    tintAlpha = 0.28f,
+                    borderAlpha = 0.65f
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 14.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(Icons.Rounded.Campaign, contentDescription = null, tint = GlassWhite, modifier = Modifier.size(20.dp))
+                        Text(
+                            text = state.pingBannerMessage ?: "",
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = GlassWhite
+                        )
+                    }
+                }
+            }
 
             // Error or Mic Permission Banner
             AnimatedVisibility(
@@ -349,25 +493,36 @@ fun WalkieTalkieScreen(
 
     if (showCreateDialog) {
         var roomName by remember { mutableStateOf("") }
+        var passcode by remember { mutableStateOf("") }
         AlertDialog(
             onDismissRequest = { showCreateDialog = false },
             containerColor = ObsidianSurface,
-            title = { Text("إنشاء غرفة لاسلكي", color = TextPrimary) },
+            title = { Text("إنشاء غرفة لاسلكي محمية", color = TextPrimary) },
             text = {
-                OutlinedTextField(
-                    value = roomName,
-                    onValueChange = { roomName = it.take(40) },
-                    label = { Text("اسم الغرفة (مثال: الأصدقاء)") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    OutlinedTextField(
+                        value = roomName,
+                        onValueChange = { roomName = it.take(40) },
+                        label = { Text("اسم الغرفة (مثال: الأصدقاء)") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    OutlinedTextField(
+                        value = passcode,
+                        onValueChange = { passcode = it.take(24) },
+                        label = { Text("رمز دخول الغرفة (4 أحرف/أرقام على الأقل)") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
             },
             confirmButton = {
                 Button(
                     onClick = {
-                        viewModel.createRoom(roomName)
+                        viewModel.createRoom(roomName, passcode)
                         showCreateDialog = false
                     },
+                    enabled = passcode.trim().length >= 4,
                     colors = ButtonDefaults.buttonColors(
                         containerColor = LiquidCyan,
                         contentColor = ObsidianDeep
@@ -386,25 +541,36 @@ fun WalkieTalkieScreen(
 
     if (showJoinDialog) {
         var roomCode by remember { mutableStateOf("") }
+        var passcode by remember { mutableStateOf("") }
         AlertDialog(
             onDismissRequest = { showJoinDialog = false },
             containerColor = ObsidianSurface,
             title = { Text("الانضمام إلى غرفة صديق", color = TextPrimary) },
             text = {
-                OutlinedTextField(
-                    value = roomCode,
-                    onValueChange = { roomCode = it.uppercase().take(12) },
-                    label = { Text("أدخل رمز الغرفة (مثال: WAVE42)") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    OutlinedTextField(
+                        value = roomCode,
+                        onValueChange = { roomCode = it.uppercase().take(12) },
+                        label = { Text("رمز الغرفة (مثال: WAVE42)") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    OutlinedTextField(
+                        value = passcode,
+                        onValueChange = { passcode = it.take(24) },
+                        label = { Text("رمز دخول الغرفة (كلمة المرور)") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
             },
             confirmButton = {
                 Button(
                     onClick = {
-                        viewModel.joinRoomByCode(roomCode)
+                        viewModel.joinRoomByCode(roomCode, passcode)
                         showJoinDialog = false
                     },
+                    enabled = roomCode.trim().length >= 4,
                     colors = ButtonDefaults.buttonColors(
                         containerColor = LuminousEmerald,
                         contentColor = ObsidianDeep
@@ -416,6 +582,275 @@ fun WalkieTalkieScreen(
             dismissButton = {
                 TextButton(onClick = { showJoinDialog = false }) {
                     Text("إلغاء", color = TextSecondary)
+                }
+            }
+        )
+    }
+
+    state.availableUpdate?.let { update ->
+        AlertDialog(
+            onDismissRequest = { viewModel.dismissUpdateDialog() },
+            containerColor = ObsidianSurface,
+            icon = {
+                Icon(
+                    imageVector = Icons.Rounded.SystemUpdate,
+                    contentDescription = "تحديث جديد",
+                    tint = LiquidCyan,
+                    modifier = Modifier.size(32.dp)
+                )
+            },
+            title = {
+                Text(
+                    text = "يتوفر تحديث جديد (v${update.latestVersion})",
+                    color = TextPrimary,
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = "الميزات والإضافات الجديدة:",
+                        color = LiquidCyan,
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = update.updateMessage.ifBlank { "تحسينات جديدة في الأداء والاستقرار." },
+                        color = TextPrimary,
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(update.downloadUrl))
+                        context.startActivity(intent)
+                        viewModel.dismissUpdateDialog()
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = LuminousEmerald,
+                        contentColor = ObsidianDeep
+                    )
+                ) {
+                    Text("تحميل التحديث الآن", fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { viewModel.dismissUpdateDialog() }) {
+                    Text("لاحقاً", color = TextSecondary)
+                }
+            }
+        )
+    }
+
+    if (showMembersDialog && state.activeRoom != null) {
+        val room = state.activeRoom!!
+        val amIOwner = room.ownerId == state.currentUserId
+        AlertDialog(
+            onDismissRequest = { showMembersDialog = false },
+            containerColor = ObsidianSurface,
+            title = {
+                Text(
+                    text = "أعضاء الغرفة (${room.memberUids.size})",
+                    color = TextPrimary,
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    room.memberUids.forEachIndexed { idx, memberUid ->
+                        val isMe = memberUid == state.currentUserId
+                        val isOwner = memberUid == room.ownerId
+                        val isMuted = memberUid in room.mutedUids
+                        val isSpeaking = memberUid == room.activeSpeakerUid && room.activeSpeakerUid.isNotBlank()
+                        val displayName = when {
+                            isMe -> state.settings.displayName.ifBlank { "أنت" }
+                            else -> room.memberNames[memberUid]?.takeIf { it.isNotBlank() } ?: "عضو ${idx + 1}"
+                        }
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(14.dp))
+                                .background(
+                                    when {
+                                        isMuted -> RubyCrimson.copy(alpha = 0.15f)
+                                        isSpeaking -> LuminousEmerald.copy(alpha = 0.18f)
+                                        else -> GlassWhite.copy(alpha = 0.06f)
+                                    }
+                                )
+                                .padding(horizontal = 12.dp, vertical = 8.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(
+                                modifier = Modifier.weight(1f),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(10.dp)
+                                        .clip(CircleShape)
+                                        .background(
+                                            when {
+                                                isMuted -> RubyCrimson
+                                                isSpeaking -> LuminousEmerald
+                                                else -> LiquidCyan
+                                            }
+                                        )
+                                )
+                                Column {
+                                    Text(
+                                        text = buildString {
+                                            append(displayName)
+                                            if (isMe) append(" (أنت)")
+                                        },
+                                        color = TextPrimary,
+                                        fontWeight = if (isMe || isSpeaking) FontWeight.Bold else FontWeight.Normal
+                                    )
+                                    Text(
+                                        text = when {
+                                            isMuted -> "مكتوم"
+                                            isSpeaking -> "يتحدث الآن"
+                                            isOwner -> "المالك"
+                                            else -> "متصل"
+                                        },
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = when {
+                                            isMuted -> RubyCrimson
+                                            isSpeaking -> LuminousEmerald
+                                            isOwner -> LiquidCyan
+                                            else -> TextSecondary
+                                        }
+                                    )
+                                }
+                            }
+                            if (amIOwner && !isOwner) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    IconButton(
+                                        onClick = { viewModel.toggleMuteMember(memberUid) },
+                                        modifier = Modifier.size(36.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = if (isMuted) Icons.Rounded.VolumeUp else Icons.Rounded.VolumeOff,
+                                            contentDescription = if (isMuted) "فك الكتم" else "كتم العضو",
+                                            tint = if (isMuted) LuminousEmerald else TextSecondary,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
+                                    IconButton(
+                                        onClick = { viewModel.kickMember(memberUid) },
+                                        modifier = Modifier.size(36.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Rounded.PersonRemove,
+                                            contentDescription = "طرد العضو",
+                                            tint = RubyCrimson,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showMembersDialog = false }) {
+                    Text("إغلاق", color = LiquidCyan, fontWeight = FontWeight.Bold)
+                }
+            }
+        )
+    }
+
+    if (showChatDialog && state.activeRoom != null) {
+        var chatInput by remember { mutableStateOf("") }
+        AlertDialog(
+            onDismissRequest = { showChatDialog = false },
+            containerColor = ObsidianSurface,
+            title = {
+                Text(
+                    text = "دردشة ${state.activeRoom!!.roomName}",
+                    color = TextPrimary,
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    if (state.chatMessages.isEmpty()) {
+                        Text(
+                            text = "لا توجد رسائل بعد — ابدأ المحادثة مع أعضاء الغرفة!",
+                            color = TextSecondary,
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    } else {
+                        LazyColumn(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(220.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            items(state.chatMessages, key = { it.id.ifBlank { it.text + it.senderUid } }) { msg ->
+                                val isMine = msg.senderUid == state.currentUserId
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(14.dp))
+                                        .background(
+                                            if (isMine) LiquidCyan.copy(alpha = 0.16f)
+                                            else GlassWhite.copy(alpha = 0.07f)
+                                        )
+                                        .padding(horizontal = 12.dp, vertical = 8.dp)
+                                ) {
+                                    Text(
+                                        text = if (isMine) "أنت" else msg.senderName,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = if (isMine) LiquidCyan else LuminousEmerald,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Text(
+                                        text = msg.text,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = TextPrimary
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedTextField(
+                            value = chatInput,
+                            onValueChange = { chatInput = it.take(400) },
+                            placeholder = { Text("اكتب رسالة سريعة...") },
+                            singleLine = true,
+                            modifier = Modifier.weight(1f)
+                        )
+                        IconButton(
+                            onClick = {
+                                if (chatInput.isNotBlank()) {
+                                    viewModel.sendChatMessage(chatInput)
+                                    chatInput = ""
+                                }
+                            }
+                        ) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Rounded.Send,
+                                contentDescription = "إرسال",
+                                tint = LuminousEmerald
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showChatDialog = false }) {
+                    Text("إغلاق", color = LiquidCyan, fontWeight = FontWeight.Bold)
                 }
             }
         )
@@ -541,7 +976,8 @@ private fun CloudRoomGlassCard(
     onCreateRoomClick: () -> Unit,
     onJoinRoomClick: () -> Unit,
     onCopyCode: (String) -> Unit,
-    onShareRoom: (CloudRoom) -> Unit
+    onShareRoom: (CloudRoom) -> Unit,
+    onShowMembers: () -> Unit
 ) {
     LiquidGlassSurface(
         modifier = Modifier.fillMaxWidth(),
@@ -601,6 +1037,9 @@ private fun CloudRoomGlassCard(
                     }
 
                     LiquidGlassSurface(
+                        modifier = Modifier
+                            .testTag("room_members_button")
+                            .clickable(onClick = onShowMembers),
                         shape = RoundedCornerShape(50),
                         accentColor = LuminousEmerald,
                         tintAlpha = 0.18f,

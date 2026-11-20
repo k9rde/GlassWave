@@ -413,27 +413,46 @@ fun LiquidGlassPttOrb(
                 )
             }
 
+            // Live reactive liquid sine wave inside the glass orb
+            LiveLiquidSineWave(
+                micLevel = smoothLevel,
+                isActive = isTransmitting || isReceiving,
+                primaryColor = coreColor,
+                secondaryColor = secondaryColor,
+                modifier = Modifier.fillMaxSize()
+            )
+
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center
             ) {
-                val centerIcon = when {
-                    mode == RadioMode.ALWAYS_OFF -> Icons.Rounded.MicOff
-                    isTransmitting -> Icons.Rounded.GraphicEq
-                    else -> Icons.Rounded.Mic
+                if (isTransmitting || isReceiving) {
+                    LiveAudioWaveBars(
+                        micLevel = smoothLevel,
+                        isActive = true,
+                        barColor = coreColor,
+                        accentColor = secondaryColor,
+                        modifier = Modifier.size(width = 108.dp, height = 56.dp)
+                    )
+                } else {
+                    val centerIcon = when {
+                        mode == RadioMode.ALWAYS_OFF -> Icons.Rounded.MicOff
+                        else -> Icons.Rounded.Mic
+                    }
+                    Icon(
+                        imageVector = centerIcon,
+                        contentDescription = "زر التحدث الفوري",
+                        tint = GlassWhite,
+                        modifier = Modifier.size(64.dp)
+                    )
                 }
-                Icon(
-                    imageVector = centerIcon,
-                    contentDescription = "زر التحدث الفوري",
-                    tint = GlassWhite,
-                    modifier = Modifier.size(64.dp)
-                )
-                Spacer(modifier = Modifier.height(6.dp))
+                Spacer(modifier = Modifier.height(8.dp))
                 Text(
                     text = when {
                         mode == RadioMode.ALWAYS_OFF -> "مُغلق"
                         mode == RadioMode.ALWAYS_ON -> "بث مستمر"
                         isTransmitting -> "على الهواء"
+                        isReceiving -> "استقبال صوتي"
                         else -> "اضغط للتحدث"
                     },
                     style = MaterialTheme.typography.titleMedium,

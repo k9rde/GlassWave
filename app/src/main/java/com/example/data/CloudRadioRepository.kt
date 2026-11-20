@@ -124,17 +124,29 @@ class CloudRadioRepository(private val db: FirebaseFirestore) {
         )
     }
 
-    suspend fun createRoom(roomName: String): Result<CloudRoom> {
+    suspend fun createRoom(
+        roomName: String,
+        passcode: String,
+        creatorName: String? = null
+    ): Result<CloudRoom> {
         val code = generateRoomCode()
         val path = "rooms/$code"
+        val cleanPasscode = passcode.trim().take(32)
+        if (cleanPasscode.length < 4) {
+            return Result.failure(IllegalArgumentException("يرجى إدخال رمز دخول للغرفة (4 أحرف أو أرقام على الأقل)"))
+        }
         return try {
             val uid = requireUserId()
             val cleanName = roomName.trim().ifBlank { "غرفة الأصدقاء" }.take(60)
+            val displayName = creatorName?.trim()?.take(40)?.ifBlank { currentDisplayName() } ?: currentDisplayName()
+            val memberNames = mapOf(uid to displayName)
             val payload = mapOf(
                 "ownerId" to uid,
                 "roomCode" to code,
                 "roomName" to cleanName,
+                "roomPasscode" to cleanPasscode,
                 "memberUids" to listOf(uid),
+                "memberNames" to memberNames,
                 "activeSpeakerUid" to "",
                 "activeSpeakerName" to "",
                 "createdAt" to FieldValue.serverTimestamp(),
@@ -147,7 +159,9 @@ class CloudRadioRepository(private val db: FirebaseFirestore) {
                     ownerId = uid,
                     roomCode = code,
                     roomName = cleanName,
-                    memberUids = listOf(uid)
+                    roomPasscode = cleanPasscode,
+                    memberUids = listOf(uid),
+                    memberNames = memberNames
                 )
             )
         } catch (e: CancellationException) {
@@ -158,7 +172,11 @@ class CloudRadioRepository(private val db: FirebaseFirestore) {
         }
     }
 
-    suspend fun joinRoomByCode(rawCode: String): Result<CloudRoom> {
+    suspend fun joinRoomByCode(
+        rawCode: String,
+        passcode: String,
+        memberName: String? = null
+    ): Result<CloudRoom> {
         val code = rawCode.trim().uppercase().filter { it.isLetterOrDigit() }
         if (code.length < 4 || code.length > 12) {
             return Result.failure(IllegalArgumentException("رمز الغرفة غير صالح"))
@@ -176,6 +194,12 @@ class CloudRadioRepository(private val db: FirebaseFirestore) {
                 DocumentSnapshot.ServerTimestampBehavior.ESTIMATE
             ) ?: return Result.failure(IllegalStateException("بيانات الغرفة غير صالحة"))
 
+            if (room.roomPasscode.isNotBlank() && room.roomPasscode != passcode.trim() && uid !in room.memberUids) {
+                return Result.failure(IllegalArgumentException("رمز دخول الغرفة غير صحيح"))
+            }
+
+            val displayName = memberName?.trim()?.take(40)?.ifBlank { currentDisplayName() } ?: currentDisplayName()
+            val updatedNames = room.memberNames + (uid to displayName)
             if (uid !in room.memberUids) {
                 if (room.memberUids.size >= 25) {
                     return Result.failure(IllegalStateException("الغرفة ممتلئة"))
@@ -184,13 +208,41 @@ class CloudRadioRepository(private val db: FirebaseFirestore) {
                 docRef.update(
                     mapOf(
                         "memberUids" to updatedMembers,
+                        "memberNames" to updatedNames,
                         "updatedAt" to FieldValue.serverTimestamp()
                     )
                 ).await()
-                Result.success(room.copy(memberUids = updatedMembers))
+                Result.success(room.copy(memberUids = updatedMembers, memberNames = updatedNames))
             } else {
-                Result.success(room)
+                docRef.update(
+                    mapOf(
+                        "memberNames" to updatedNames,
+                        "updatedAt" to FieldValue.serverTimestamp()
+                    )
+                ).await()
+                Result.success(room.copy(memberNames = updatedNames))
             }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.UPDATE, path)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun updateMemberDisplayName(room: CloudRoom, displayName: String): Result<Unit> {
+        val path = "rooms/${room.id}"
+        return try {
+            val uid = requireUserId()
+            val clean = displayName.trim().take(40).ifBlank { currentDisplayName() }
+            val updatedNames = room.memberNames + (uid to clean)
+            db.collection("rooms").document(room.id).update(
+                mapOf(
+                    "memberNames" to updatedNames,
+                    "updatedAt" to FieldValue.serverTimestamp()
+                )
+            ).await()
+            Result.success(Unit)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -282,6 +334,168 @@ class CloudRadioRepository(private val db: FirebaseFirestore) {
                 "senderUid" to uid,
                 "senderName" to name,
                 "audioBase64" to audioBase64,
+                "memberUids" to safeMembers,
+                "createdAt" to FieldValue.serverTimestamp()
+            )
+            docRef.set(payload).await()
+            Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.CREATE, path)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun sendPing(roomId: String, senderName: String? = null): Result<Unit> {
+        val path = "rooms/$roomId"
+        return try {
+            val uid = requireUserId()
+            val name = senderName?.trim()?.take(40)?.ifBlank { currentDisplayName() } ?: currentDisplayName()
+            db.collection("rooms").document(roomId).update(
+                mapOf(
+                    "lastPingUid" to uid,
+                    "lastPingName" to name,
+                    "lastPingAt" to System.currentTimeMillis(),
+                    "updatedAt" to FieldValue.serverTimestamp()
+                )
+            ).await()
+            Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.UPDATE, path)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun toggleMuteMember(room: CloudRoom, targetUid: String): Result<Unit> {
+        val path = "rooms/${room.id}"
+        return try {
+            val uid = requireUserId()
+            if (room.ownerId != uid || targetUid == room.ownerId) {
+                return Result.failure(IllegalArgumentException("غير مصرح"))
+            }
+            val updatedMuted = if (targetUid in room.mutedUids) {
+                room.mutedUids.filter { it != targetUid }
+            } else {
+                (room.mutedUids + targetUid).distinct().take(25)
+            }
+            db.collection("rooms").document(room.id).update(
+                mapOf(
+                    "mutedUids" to updatedMuted,
+                    "updatedAt" to FieldValue.serverTimestamp()
+                )
+            ).await()
+            Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.UPDATE, path)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun kickMember(room: CloudRoom, targetUid: String): Result<Unit> {
+        val path = "rooms/${room.id}"
+        return try {
+            val uid = requireUserId()
+            if (room.ownerId != uid || targetUid == room.ownerId) {
+                return Result.failure(IllegalArgumentException("غير مصرح"))
+            }
+            val updatedMembers = room.memberUids.filter { it != targetUid }
+            val updatedMuted = room.mutedUids.filter { it != targetUid }
+            val updatedNames = room.memberNames - targetUid
+            db.collection("rooms").document(room.id).update(
+                mapOf(
+                    "memberUids" to updatedMembers,
+                    "mutedUids" to updatedMuted,
+                    "memberNames" to updatedNames,
+                    "updatedAt" to FieldValue.serverTimestamp()
+                )
+            ).await()
+            Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.UPDATE, path)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun updateRoomPasscode(room: CloudRoom, newPasscode: String): Result<Unit> {
+        val path = "rooms/${room.id}"
+        val clean = newPasscode.trim().take(32)
+        if (clean.length < 4) {
+            return Result.failure(IllegalArgumentException("رمز الدخول يجب أن يكون 4 أحرف أو أرقام على الأقل"))
+        }
+        return try {
+            val uid = requireUserId()
+            if (room.ownerId != uid) {
+                return Result.failure(IllegalArgumentException("فقط مالك الغرفة يمكنه تغيير الرمز"))
+            }
+            db.collection("rooms").document(room.id).update(
+                mapOf(
+                    "roomPasscode" to clean,
+                    "updatedAt" to FieldValue.serverTimestamp()
+                )
+            ).await()
+            Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.UPDATE, path)
+            Result.failure(e)
+        }
+    }
+
+    fun observeChatMessages(roomId: String): Flow<List<RoomChatMessage>> = flow {
+        val uid = requireUserId()
+        val path = "rooms/$roomId/messages"
+        emitAll(
+            db.collection("rooms").document(roomId).collection("messages")
+                .whereArrayContains("memberUids", uid)
+                .orderBy("createdAt", Query.Direction.DESCENDING)
+                .limit(30)
+                .snapshots()
+                .map { snapshot ->
+                    snapshot.toObjects(
+                        RoomChatMessage::class.java,
+                        DocumentSnapshot.ServerTimestampBehavior.ESTIMATE
+                    ).reversed()
+                }
+                .catch { error ->
+                    val firestoreError = generateSequence(error) { it.cause }
+                        .filterIsInstance<FirebaseFirestoreException>()
+                        .firstOrNull()
+                    if (firestoreError == null && error is CancellationException) throw error
+                    val exceptionToLog = firestoreError ?: (error as? Exception)
+                    if (exceptionToLog != null && auth.currentUser?.uid == uid) {
+                        handleFirestoreError(exceptionToLog, OperationType.LIST, path)
+                    }
+                    throw error
+                }
+        )
+    }
+
+    suspend fun sendChatMessage(
+        roomId: String,
+        memberUids: List<String>,
+        text: String,
+        senderName: String? = null
+    ): Result<Unit> {
+        val cleanText = text.trim().take(400)
+        if (cleanText.isBlank()) return Result.failure(IllegalArgumentException("الرسالة فارغة"))
+        val docRef = db.collection("rooms").document(roomId).collection("messages").document()
+        val path = docRef.path
+        return try {
+            val uid = requireUserId()
+            val safeMembers = if (uid in memberUids) memberUids.take(25) else (memberUids + uid).take(25)
+            val name = senderName?.trim()?.take(40)?.ifBlank { currentDisplayName() } ?: currentDisplayName()
+            val payload = mapOf(
+                "senderUid" to uid,
+                "senderName" to name,
+                "text" to cleanText,
                 "memberUids" to safeMembers,
                 "createdAt" to FieldValue.serverTimestamp()
             )

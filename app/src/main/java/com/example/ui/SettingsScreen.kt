@@ -3,6 +3,7 @@ package com.example.ui
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.content.Intent
 import android.graphics.BitmapFactory
 import android.net.Uri
 import android.widget.Toast
@@ -39,12 +40,17 @@ import androidx.compose.material.icons.rounded.CameraAlt
 import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.DeleteForever
 import androidx.compose.material.icons.rounded.GraphicEq
+import androidx.compose.material.icons.rounded.Headset
+import androidx.compose.material.icons.rounded.Lock
+import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.NotificationsActive
 import androidx.compose.material.icons.rounded.Opacity
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.PhoneAndroid
 import androidx.compose.material.icons.rounded.Radio
+import androidx.compose.material.icons.rounded.SystemUpdate
 import androidx.compose.material.icons.rounded.Vibration
+import androidx.compose.material.icons.rounded.VolumeUp
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
@@ -72,6 +78,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.example.BuildConfig
 import com.example.ui.components.LiquidAuroraBackground
 import com.example.ui.components.LiquidGlassSurface
 import com.example.ui.components.LuxuryGlassIconBadge
@@ -105,20 +112,34 @@ fun SettingsScreen(
     ) { uri: Uri? ->
         if (uri != null) {
             try {
-                context.contentResolver.takePersistableUriPermission(
-                    uri,
-                    android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION
-                )
-            } catch (_: Exception) {}
-            viewModel.updateSettings { it.copy(avatarUri = uri.toString()) }
+                val inputStream = context.contentResolver.openInputStream(uri)
+                val decoded = inputStream?.use { BitmapFactory.decodeStream(it) }
+                if (decoded != null) {
+                    val avatarFile = java.io.File(context.filesDir, "avatar_${state.currentUserId}_${System.currentTimeMillis()}.jpg")
+                    java.io.FileOutputStream(avatarFile).use { out ->
+                        decoded.compress(android.graphics.Bitmap.CompressFormat.JPEG, 88, out)
+                    }
+                    viewModel.updateSettings { it.copy(avatarUri = avatarFile.absolutePath) }
+                    Toast.makeText(context, "تم حفظ الصورة الشخصية بنجاح", Toast.LENGTH_SHORT).show()
+                } else {
+                    Toast.makeText(context, "تعذر قراءة الصورة المختارة", Toast.LENGTH_SHORT).show()
+                }
+            } catch (_: Exception) {
+                Toast.makeText(context, "تعذر حفظ الصورة الشخصية", Toast.LENGTH_SHORT).show()
+            }
         }
     }
 
     val avatarBitmap = remember(state.settings.avatarUri) {
-        state.settings.avatarUri?.let { uriStr ->
+        state.settings.avatarUri?.let { path ->
             try {
-                context.contentResolver.openInputStream(Uri.parse(uriStr))?.use { stream ->
-                    BitmapFactory.decodeStream(stream)?.asImageBitmap()
+                val file = java.io.File(path)
+                if (file.exists()) {
+                    BitmapFactory.decodeFile(file.absolutePath)?.asImageBitmap()
+                } else {
+                    context.contentResolver.openInputStream(Uri.parse(path))?.use { stream ->
+                        BitmapFactory.decodeStream(stream)?.asImageBitmap()
+                    }
                 }
             } catch (_: Exception) {
                 null
@@ -316,6 +337,25 @@ fun SettingsScreen(
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = TextSecondary
                             )
+                            if (room.ownerId == state.currentUserId && room.roomPasscode.isNotBlank()) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Lock,
+                                        contentDescription = null,
+                                        tint = LuminousEmerald,
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                    Text(
+                                        text = "رمز الدخول: ${room.roomPasscode}",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontFamily = JetBrainsMonoFontFamily,
+                                        color = LuminousEmerald
+                                    )
+                                }
+                            }
                         }
                         LuxuryGlassIconBadge(
                             icon = Icons.Rounded.ContentCopy,
@@ -330,6 +370,37 @@ fun SettingsScreen(
                                 Toast.makeText(context, "تم نسخ الرمز: ${room.roomCode}", Toast.LENGTH_SHORT).show()
                             }
                         )
+                    }
+
+                    if (room.ownerId == state.currentUserId) {
+                        var newPasscode by remember(room.roomPasscode) { mutableStateOf(room.roomPasscode) }
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            OutlinedTextField(
+                                value = newPasscode,
+                                onValueChange = { newPasscode = it.take(24) },
+                                label = { Text("تعديل رمز الدخول") },
+                                singleLine = true,
+                                modifier = Modifier.weight(1f)
+                            )
+                            Button(
+                                onClick = {
+                                    viewModel.updateRoomPasscode(newPasscode)
+                                    Toast.makeText(context, "تم تحديث رمز الدخول", Toast.LENGTH_SHORT).show()
+                                },
+                                enabled = newPasscode.trim().length >= 4 && newPasscode.trim() != room.roomPasscode,
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = LuminousEmerald,
+                                    contentColor = ObsidianDeep
+                                ),
+                                shape = RoundedCornerShape(14.dp)
+                            ) {
+                                Text("حفظ", fontWeight = FontWeight.Bold)
+                            }
+                        }
                     }
 
                     Spacer(modifier = Modifier.height(6.dp))
@@ -440,6 +511,61 @@ fun SettingsScreen(
                         viewModel.updateSettings { it.copy(keepScreenOn = checked) }
                     }
                 )
+                SettingsToggleRow(
+                    icon = Icons.Rounded.Headset,
+                    title = "الاستماع بالخلفية",
+                    subtitle = "إبقاء الاستماع نشطاً مع إشعار دائم عند إغلاق الشاشة",
+                    checked = state.settings.backgroundListeningEnabled,
+                    onCheckedChange = { checked ->
+                        viewModel.updateSettings { it.copy(backgroundListeningEnabled = checked) }
+                    }
+                )
+                SettingsToggleRow(
+                    icon = Icons.Rounded.VolumeUp,
+                    title = "التحدث بزر الصوت",
+                    subtitle = "الضغط المطول على زر رفع/خفض الصوت للتحدث",
+                    checked = state.settings.volumeKeyPttEnabled,
+                    onCheckedChange = { checked ->
+                        viewModel.updateSettings { it.copy(volumeKeyPttEnabled = checked) }
+                    }
+                )
+                SettingsToggleRow(
+                    icon = Icons.Rounded.Radio,
+                    title = "فلتر صوت اللاسلكي (Radio FX)",
+                    subtitle = "إضافة طابع صوت أجهزة اللاسلكي الحقيقية",
+                    checked = state.settings.radioFxEnabled,
+                    onCheckedChange = { checked ->
+                        viewModel.updateSettings { it.copy(radioFxEnabled = checked) }
+                    }
+                )
+
+                // Roger Beep Style Selector
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(Icons.Rounded.MusicNote, contentDescription = null, tint = LiquidCyan, modifier = Modifier.size(18.dp))
+                    Text("نمط نغمة الإرسال (Roger Beep)", color = TextPrimary, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    listOf("CLASSIC" to "كلاسيكي", "POLICE" to "شرطة", "MODERN" to "حديث").forEach { (key, label) ->
+                        val selected = state.settings.rogerBeepStyle == key
+                        Button(
+                            onClick = { viewModel.updateSettings { it.copy(rogerBeepStyle = key) } },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (selected) LiquidCyan else GlassWhite.copy(alpha = 0.08f),
+                                contentColor = if (selected) ObsidianDeep else TextPrimary
+                            ),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text(label, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelMedium)
+                        }
+                    }
+                }
 
                 Spacer(modifier = Modifier.height(4.dp))
                 Row(
@@ -469,6 +595,78 @@ fun SettingsScreen(
                         activeTrackColor = LuminousEmerald
                     )
                 )
+            }
+
+            // 4.5 App Updates
+            SettingsSectionCard(title = "التحقق من التحديثات", accentColor = ElectricSapphire) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.SystemUpdate,
+                            contentDescription = null,
+                            tint = LiquidCyan,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Text(
+                            text = "الإصدار الحالي: v${BuildConfig.VERSION_NAME}",
+                            color = TextPrimary,
+                            style = MaterialTheme.typography.bodyLarge,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                }
+                if (state.updateCheckMessage != null) {
+                    Text(
+                        text = state.updateCheckMessage,
+                        color = if (state.availableUpdate != null) LuminousEmerald else TextSecondary,
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
+                Button(
+                    onClick = { viewModel.checkForUpdates(manual = true) },
+                    enabled = !state.isCheckingUpdate,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = LiquidCyan,
+                        contentColor = ObsidianDeep
+                    ),
+                    shape = RoundedCornerShape(14.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("check_updates_button")
+                ) {
+                    Text(
+                        text = if (state.isCheckingUpdate) "جاري الفحص..." else "فحص التحديثات الآن",
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+                state.availableUpdate?.let { update ->
+                    Button(
+                        onClick = {
+                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(update.downloadUrl))
+                            context.startActivity(intent)
+                        },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = LuminousEmerald,
+                            contentColor = ObsidianDeep
+                        ),
+                        shape = RoundedCornerShape(14.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("download_update_button")
+                    ) {
+                        Text(
+                            text = "تحميل التحديث (v${update.latestVersion})",
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
             }
 
             // 5. Account Control
