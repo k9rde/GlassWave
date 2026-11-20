@@ -1,11 +1,19 @@
 package com.example.data
 
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import android.os.Build
+import android.provider.Settings
+import androidx.core.content.FileProvider
 import com.example.BuildConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONObject
+import java.io.File
+import java.io.FileOutputStream
 import java.util.concurrent.TimeUnit
 
 data class AppUpdateInfo(
@@ -15,13 +23,26 @@ data class AppUpdateInfo(
     val isUpdateAvailable: Boolean
 )
 
+enum class ApkInstallResult {
+    LAUNCHED_INSTALLER,
+    NEEDS_UNKNOWN_SOURCES_PERMISSION,
+    FAILED
+}
+
 object AppUpdateChecker {
     private const val STATUS_URL = "https://k9rde.github.io/GlassWave/status.json"
     private const val DEFAULT_APK_URL = "https://k9rde.github.io/GlassWave/glasswave.apk"
 
     private val client = OkHttpClient.Builder()
-        .connectTimeout(8, TimeUnit.SECONDS)
-        .readTimeout(8, TimeUnit.SECONDS)
+        .connectTimeout(10, TimeUnit.SECONDS)
+        .readTimeout(15, TimeUnit.SECONDS)
+        .build()
+
+    private val downloadClient = OkHttpClient.Builder()
+        .connectTimeout(15, TimeUnit.SECONDS)
+        .readTimeout(90, TimeUnit.SECONDS)
+        .followRedirects(true)
+        .followSslRedirects(true)
         .build()
 
     suspend fun checkForUpdate(): Result<AppUpdateInfo> = withContext(Dispatchers.IO) {
@@ -51,6 +72,98 @@ object AppUpdateChecker {
             }
         } catch (e: Exception) {
             Result.failure(e)
+        }
+    }
+
+    suspend fun downloadUpdateApk(
+        context: Context,
+        url: String,
+        onProgress: (Int) -> Unit
+    ): Result<File> = withContext(Dispatchers.IO) {
+        try {
+            val updatesDir = File(context.cacheDir, "updates").apply { mkdirs() }
+            val tempFile = File(updatesDir, "glasswave-update.apk.part")
+            val finalFile = File(updatesDir, "glasswave-update.apk")
+            if (tempFile.exists()) tempFile.delete()
+
+            val separator = if (url.contains("?")) "&" else "?"
+            val request = Request.Builder()
+                .url("$url${separator}t=${System.currentTimeMillis()}")
+                .header("Cache-Control", "no-cache")
+                .build()
+
+            downloadClient.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    return@withContext Result.failure(IllegalStateException("فشل تنزيل التحديث (${response.code})"))
+                }
+                val body = response.body
+                    ?: return@withContext Result.failure(IllegalStateException("ملف التحديث غير متوفر"))
+                val totalBytes = body.contentLength()
+                var downloaded = 0L
+                var lastReported = -1
+
+                body.byteStream().use { input ->
+                    FileOutputStream(tempFile).use { output ->
+                        val buffer = ByteArray(16 * 1024)
+                        while (true) {
+                            val read = input.read(buffer)
+                            if (read == -1) break
+                            output.write(buffer, 0, read)
+                            downloaded += read
+                            if (totalBytes > 0) {
+                                val pct = ((downloaded * 100L) / totalBytes).toInt().coerceIn(0, 100)
+                                if (pct != lastReported) {
+                                    lastReported = pct
+                                    onProgress(pct)
+                                }
+                            }
+                        }
+                        output.flush()
+                    }
+                }
+                onProgress(100)
+                if (finalFile.exists()) finalFile.delete()
+                if (!tempFile.renameTo(finalFile)) {
+                    tempFile.copyTo(finalFile, overwrite = true)
+                    tempFile.delete()
+                }
+                Result.success(finalFile)
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    fun installApk(context: Context, apkFile: File): ApkInstallResult {
+        if (!apkFile.exists()) return ApkInstallResult.FAILED
+        return try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+                !context.packageManager.canRequestPackageInstalls()
+            ) {
+                val permIntent = Intent(
+                    Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                    Uri.parse("package:${context.packageName}")
+                ).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                context.startActivity(permIntent)
+                return ApkInstallResult.NEEDS_UNKNOWN_SOURCES_PERMISSION
+            }
+
+            val contentUri = FileProvider.getUriForFile(
+                context,
+                "${context.packageName}.fileprovider",
+                apkFile
+            )
+            val installIntent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(contentUri, "application/vnd.android.package-archive")
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(installIntent)
+            ApkInstallResult.LAUNCHED_INSTALLER
+        } catch (_: Exception) {
+            ApkInstallResult.FAILED
         }
     }
 

@@ -6,8 +6,10 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.example.audio.WalkieTalkieAudioEngine
+import com.example.data.ApkInstallResult
 import com.example.data.AppUpdateChecker
 import com.example.data.AppUpdateInfo
+import java.io.File
 import com.example.data.CloudRadioRepository
 import com.example.data.CloudRoom
 import com.example.data.RoomChatMessage
@@ -52,8 +54,13 @@ data class WalkieTalkieUiState(
     val currentUserId: String = "",
     val currentUserEmail: String = "",
     val availableUpdate: AppUpdateInfo? = null,
+    val showUpdateDialog: Boolean = false,
     val isCheckingUpdate: Boolean = false,
     val updateCheckMessage: String? = null,
+    val isDownloadingUpdate: Boolean = false,
+    val updateDownloadProgress: Int = 0,
+    val downloadedUpdateFilePath: String? = null,
+    val updateDownloadError: String? = null,
     val lastVoiceSenderName: String = "",
     val canReplayVoice: Boolean = false,
     val pingBannerMessage: String? = null,
@@ -144,6 +151,8 @@ class WalkieTalkieViewModel(
                         it.copy(
                             isCheckingUpdate = false,
                             availableUpdate = if (info.isUpdateAvailable) info else null,
+                            showUpdateDialog = info.isUpdateAvailable,
+                            updateDownloadError = null,
                             updateCheckMessage = when {
                                 info.isUpdateAvailable -> "يتوفر تحديث جديد (${info.latestVersion})!"
                                 manual -> "أنت تستخدم أحدث إصدار (${info.latestVersion})"
@@ -164,7 +173,79 @@ class WalkieTalkieViewModel(
     }
 
     fun dismissUpdateDialog() {
-        localState.update { it.copy(availableUpdate = null) }
+        localState.update { it.copy(showUpdateDialog = false) }
+    }
+
+    fun startInAppUpdateDownload() {
+        val update = localState.value.availableUpdate ?: return
+        if (localState.value.isDownloadingUpdate) return
+
+        val existingPath = localState.value.downloadedUpdateFilePath
+        if (existingPath != null && File(existingPath).exists()) {
+            installDownloadedUpdate()
+            return
+        }
+
+        viewModelScope.launch {
+            localState.update {
+                it.copy(
+                    isDownloadingUpdate = true,
+                    updateDownloadProgress = 0,
+                    updateDownloadError = null
+                )
+            }
+            AppUpdateChecker.downloadUpdateApk(
+                context = getApplication(),
+                url = update.downloadUrl,
+                onProgress = { pct ->
+                    localState.update { it.copy(updateDownloadProgress = pct) }
+                }
+            )
+                .onSuccess { file ->
+                    localState.update {
+                        it.copy(
+                            isDownloadingUpdate = false,
+                            updateDownloadProgress = 100,
+                            downloadedUpdateFilePath = file.absolutePath,
+                            updateDownloadError = null
+                        )
+                    }
+                    installDownloadedUpdate()
+                }
+                .onFailure { err ->
+                    localState.update {
+                        it.copy(
+                            isDownloadingUpdate = false,
+                            updateDownloadError = err.localizedMessage ?: "فشل تنزيل التحديث"
+                        )
+                    }
+                }
+        }
+    }
+
+    fun installDownloadedUpdate() {
+        val path = localState.value.downloadedUpdateFilePath ?: return
+        val file = File(path)
+        when (AppUpdateChecker.installApk(getApplication(), file)) {
+            ApkInstallResult.LAUNCHED_INSTALLER -> {
+                localState.update { it.copy(updateDownloadError = null) }
+            }
+            ApkInstallResult.NEEDS_UNKNOWN_SOURCES_PERMISSION -> {
+                localState.update {
+                    it.copy(
+                        updateDownloadError = "اسمح بتثبيت التطبيقات من هذا المصدر ثم اضغط «تثبيت التحديث الآن»"
+                    )
+                }
+            }
+            ApkInstallResult.FAILED -> {
+                localState.update {
+                    it.copy(
+                        downloadedUpdateFilePath = null,
+                        updateDownloadError = "تعذر فتح المثبّت، يرجى إعادة التنزيل"
+                    )
+                }
+            }
+        }
     }
 
     private fun observeRooms() {

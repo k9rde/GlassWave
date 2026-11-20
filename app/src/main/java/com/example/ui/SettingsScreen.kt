@@ -55,6 +55,7 @@ import androidx.compose.material.icons.rounded.VolumeUp
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
@@ -656,11 +657,38 @@ fun SettingsScreen(
                     )
                 }
                 state.availableUpdate?.let { update ->
+                    if (state.isDownloadingUpdate) {
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            LinearProgressIndicator(
+                                progress = { (state.updateDownloadProgress / 100f).coerceIn(0f, 1f) },
+                                color = LuminousEmerald,
+                                trackColor = GlassWhite.copy(alpha = 0.14f),
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            Text(
+                                text = "جاري تنزيل التحديث... ${state.updateDownloadProgress}%",
+                                color = LiquidCyan,
+                                style = MaterialTheme.typography.labelMedium,
+                                fontFamily = JetBrainsMonoFontFamily
+                            )
+                        }
+                    }
+                    state.updateDownloadError?.let { errMsg ->
+                        Text(
+                            text = errMsg,
+                            color = RubyCrimson,
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
                     Button(
                         onClick = {
-                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(update.downloadUrl))
-                            context.startActivity(intent)
+                            if (state.downloadedUpdateFilePath != null) {
+                                viewModel.installDownloadedUpdate()
+                            } else {
+                                viewModel.startInAppUpdateDownload()
+                            }
                         },
+                        enabled = !state.isDownloadingUpdate,
                         colors = ButtonDefaults.buttonColors(
                             containerColor = LuminousEmerald,
                             contentColor = ObsidianDeep
@@ -671,7 +699,11 @@ fun SettingsScreen(
                             .testTag("download_update_button")
                     ) {
                         Text(
-                            text = "تحميل التحديث (v${update.latestVersion})",
+                            text = when {
+                                state.isDownloadingUpdate -> "جاري التنزيل ${state.updateDownloadProgress}%"
+                                state.downloadedUpdateFilePath != null -> "تثبيت التحديث الآن (v${update.latestVersion})"
+                                else -> "تنزيل وتثبيت التحديث (v${update.latestVersion})"
+                            },
                             fontWeight = FontWeight.Bold
                         )
                     }

@@ -62,6 +62,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -587,9 +588,12 @@ fun WalkieTalkieScreen(
         )
     }
 
-    state.availableUpdate?.let { update ->
+    val updateInfo = state.availableUpdate
+    if (state.showUpdateDialog && updateInfo != null) {
         AlertDialog(
-            onDismissRequest = { viewModel.dismissUpdateDialog() },
+            onDismissRequest = {
+                if (!state.isDownloadingUpdate) viewModel.dismissUpdateDialog()
+            },
             containerColor = ObsidianSurface,
             icon = {
                 Icon(
@@ -601,13 +605,13 @@ fun WalkieTalkieScreen(
             },
             title = {
                 Text(
-                    text = "يتوفر تحديث جديد (v${update.latestVersion})",
+                    text = "يتوفر تحديث جديد (v${updateInfo.latestVersion})",
                     color = TextPrimary,
                     fontWeight = FontWeight.Bold
                 )
             },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text(
                         text = "الميزات والإضافات الجديدة:",
                         color = LiquidCyan,
@@ -615,30 +619,65 @@ fun WalkieTalkieScreen(
                         fontWeight = FontWeight.Bold
                     )
                     Text(
-                        text = update.updateMessage.ifBlank { "تحسينات جديدة في الأداء والاستقرار." },
+                        text = updateInfo.updateMessage.ifBlank { "تحسينات جديدة في الأداء والاستقرار." },
                         color = TextPrimary,
                         style = MaterialTheme.typography.bodyMedium
                     )
+                    if (state.isDownloadingUpdate) {
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            LinearProgressIndicator(
+                                progress = { (state.updateDownloadProgress / 100f).coerceIn(0f, 1f) },
+                                color = LuminousEmerald,
+                                trackColor = GlassWhite.copy(alpha = 0.14f),
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            Text(
+                                text = "جاري تنزيل التحديث داخل التطبيق... ${state.updateDownloadProgress}%",
+                                color = LiquidCyan,
+                                style = MaterialTheme.typography.labelMedium,
+                                fontFamily = JetBrainsMonoFontFamily
+                            )
+                        }
+                    }
+                    state.updateDownloadError?.let { errMsg ->
+                        Text(
+                            text = errMsg,
+                            color = RubyCrimson,
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
                 }
             },
             confirmButton = {
                 Button(
                     onClick = {
-                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(update.downloadUrl))
-                        context.startActivity(intent)
-                        viewModel.dismissUpdateDialog()
+                        if (state.downloadedUpdateFilePath != null) {
+                            viewModel.installDownloadedUpdate()
+                        } else {
+                            viewModel.startInAppUpdateDownload()
+                        }
                     },
+                    enabled = !state.isDownloadingUpdate,
                     colors = ButtonDefaults.buttonColors(
                         containerColor = LuminousEmerald,
                         contentColor = ObsidianDeep
                     )
                 ) {
-                    Text("تحميل التحديث الآن", fontWeight = FontWeight.Bold)
+                    Text(
+                        text = when {
+                            state.isDownloadingUpdate -> "جاري التنزيل ${state.updateDownloadProgress}%"
+                            state.downloadedUpdateFilePath != null -> "تثبيت التحديث الآن"
+                            else -> "تنزيل وتثبيت الآن"
+                        },
+                        fontWeight = FontWeight.Bold
+                    )
                 }
             },
             dismissButton = {
-                TextButton(onClick = { viewModel.dismissUpdateDialog() }) {
-                    Text("لاحقاً", color = TextSecondary)
+                if (!state.isDownloadingUpdate) {
+                    TextButton(onClick = { viewModel.dismissUpdateDialog() }) {
+                        Text("لاحقاً", color = TextSecondary)
+                    }
                 }
             }
         )
