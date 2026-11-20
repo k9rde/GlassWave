@@ -71,7 +71,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -85,10 +84,8 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import com.example.BuildConfig
 import com.example.ui.components.LiquidAuroraBackground
@@ -682,19 +679,15 @@ fun SettingsScreen(
             }
 
             // 5. Developer Contact (Instagram & WhatsApp)
-            SettingsSectionCard(title = "تواصل مع المطور", accentColor = LiquidCyan) {
-                Text(
-                    text = "للدعم الفني، الاقتراحات، أو متابعة التحديثات المباشرة:",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = TextSecondary
-                )
+            SettingsSectionCard(title = "للتواصل مع المطور", accentColor = LiquidCyan) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    horizontalArrangement = Arrangement.spacedBy(18.dp, Alignment.CenterHorizontally),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
                     LiquidGlassSurface(
                         modifier = Modifier
-                            .weight(1f)
+                            .size(64.dp)
                             .testTag("developer_instagram_button")
                             .clickable {
                                 try {
@@ -705,42 +698,22 @@ fun SettingsScreen(
                                     Toast.makeText(context, "تعذر فتح إنستغرام", Toast.LENGTH_SHORT).show()
                                 }
                             },
-                        shape = RoundedCornerShape(18.dp),
+                        shape = RoundedCornerShape(22.dp),
                         accentColor = Color(0xFFE1306C),
-                        tintAlpha = 0.16f,
-                        borderAlpha = 0.42f
+                        tintAlpha = 0.22f,
+                        borderAlpha = 0.52f
                     ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 12.dp, vertical = 12.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        Box(
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center
                         ) {
-                            InstagramGlyph(modifier = Modifier.size(30.dp))
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = "إنستغرام",
-                                    style = MaterialTheme.typography.labelLarge,
-                                    fontWeight = FontWeight.Bold,
-                                    color = GlassWhite
-                                )
-                                CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
-                                    Text(
-                                        text = "@0nusn",
-                                        style = MaterialTheme.typography.labelMedium,
-                                        fontFamily = JetBrainsMonoFontFamily,
-                                        color = Color(0xFFF472B6),
-                                        maxLines = 1
-                                    )
-                                }
-                            }
+                            InstagramGlyph(modifier = Modifier.size(38.dp))
                         }
                     }
 
                     LiquidGlassSurface(
                         modifier = Modifier
-                            .weight(1f)
+                            .size(64.dp)
                             .testTag("developer_whatsapp_button")
                             .clickable {
                                 try {
@@ -751,36 +724,16 @@ fun SettingsScreen(
                                     Toast.makeText(context, "تعذر فتح واتساب", Toast.LENGTH_SHORT).show()
                                 }
                             },
-                        shape = RoundedCornerShape(18.dp),
+                        shape = RoundedCornerShape(22.dp),
                         accentColor = Color(0xFF25D366),
-                        tintAlpha = 0.16f,
-                        borderAlpha = 0.42f
+                        tintAlpha = 0.22f,
+                        borderAlpha = 0.52f
                     ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 12.dp, vertical = 12.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        Box(
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center
                         ) {
-                            WhatsAppGlyph(modifier = Modifier.size(30.dp))
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = "واتساب",
-                                    style = MaterialTheme.typography.labelLarge,
-                                    fontWeight = FontWeight.Bold,
-                                    color = GlassWhite
-                                )
-                                CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
-                                    Text(
-                                        text = "+964 774 608 8000",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        fontFamily = JetBrainsMonoFontFamily,
-                                        color = LuminousEmerald,
-                                        maxLines = 1
-                                    )
-                                }
-                            }
+                            WhatsAppGlyph(modifier = Modifier.size(38.dp))
                         }
                     }
                 }

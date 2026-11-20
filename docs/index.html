@@ -14,8 +14,6 @@
       --cyan: #38bdf8;
       --sapphire: #3b82f6;
       --emerald: #10b981;
-      --amber: #f59e0b;
-      --ruby: #f43f5e;
       --text-primary: #f8fafc;
       --text-secondary: #94a3b8;
     }
@@ -42,7 +40,7 @@
     .glass-card {
       width: 100%;
       max-width: 480px;
-      padding: 28px 24px;
+      padding: 30px 24px;
       border-radius: 32px;
       background: linear-gradient(135deg, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0.04));
       border: 1.2px solid rgba(255, 255, 255, 0.26);
@@ -50,94 +48,6 @@
       -webkit-backdrop-filter: blur(26px);
       box-shadow: 0 28px 80px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.35);
       text-align: center;
-    }
-
-    .dynamic-alerts {
-      display: grid;
-      gap: 10px;
-      margin-bottom: 22px;
-      text-align: right;
-    }
-
-    .alert-banner {
-      display: flex;
-      align-items: flex-start;
-      justify-content: space-between;
-      gap: 10px;
-      padding: 12px 14px;
-      border-radius: 18px;
-      background: rgba(255, 255, 255, 0.08);
-      border: 1px solid rgba(255, 255, 255, 0.2);
-      font-size: 0.86rem;
-      line-height: 1.5;
-      transition: opacity 0.25s ease, transform 0.25s ease;
-    }
-
-    .alert-banner.update {
-      background: linear-gradient(135deg, rgba(56, 189, 248, 0.2), rgba(59, 130, 246, 0.08));
-      border-color: rgba(56, 189, 248, 0.45);
-    }
-
-    .alert-banner.status-online {
-      background: linear-gradient(135deg, rgba(16, 185, 129, 0.18), rgba(16, 185, 129, 0.06));
-      border-color: rgba(16, 185, 129, 0.42);
-    }
-
-    .alert-banner.status-maintenance {
-      background: linear-gradient(135deg, rgba(245, 158, 11, 0.2), rgba(245, 158, 11, 0.06));
-      border-color: rgba(245, 158, 11, 0.45);
-    }
-
-    .alert-banner.status-offline {
-      background: linear-gradient(135deg, rgba(244, 63, 94, 0.2), rgba(244, 63, 94, 0.06));
-      border-color: rgba(244, 63, 94, 0.45);
-    }
-
-    .alert-content {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      flex: 1;
-    }
-
-    .status-dot {
-      width: 10px;
-      height: 10px;
-      border-radius: 50%;
-      flex-shrink: 0;
-      background: var(--emerald);
-      box-shadow: 0 0 12px var(--emerald);
-      animation: pulse 1.8s infinite;
-    }
-
-    .status-maintenance .status-dot {
-      background: var(--amber);
-      box-shadow: 0 0 12px var(--amber);
-    }
-
-    .status-offline .status-dot {
-      background: var(--ruby);
-      box-shadow: 0 0 12px var(--ruby);
-      animation: none;
-    }
-
-    .dismiss-btn {
-      background: transparent;
-      border: none;
-      color: var(--text-secondary);
-      font-size: 1.1rem;
-      cursor: pointer;
-      padding: 0 4px;
-      line-height: 1;
-    }
-
-    .dismiss-btn:hover {
-      color: var(--text-primary);
-    }
-
-    @keyframes pulse {
-      0%, 100% { opacity: 1; transform: scale(1); }
-      50% { opacity: 0.45; transform: scale(0.85); }
     }
 
     .app-badge {
@@ -233,85 +143,92 @@
       color: var(--text-primary);
     }
 
+    .footer {
+      margin-top: 18px;
+      font-size: 0.78rem;
+      color: var(--text-secondary);
+      opacity: 0.8;
+    }
+
     .social-section {
       margin-top: 20px;
-      padding-top: 16px;
+      padding-top: 18px;
       border-top: 1px solid rgba(255, 255, 255, 0.12);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 14px;
     }
 
     .social-title {
-      font-size: 0.85rem;
+      font-size: 0.92rem;
       color: var(--text-secondary);
-      margin-bottom: 10px;
       font-weight: 600;
     }
 
-    .social-row {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 10px;
+    .social-icons {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 18px;
     }
 
-    .social-btn {
+    .glass-icon-link {
+      position: relative;
+      width: 62px;
+      height: 62px;
+      border-radius: 22px;
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      gap: 8px;
-      padding: 11px 12px;
-      border-radius: 16px;
       text-decoration: none;
-      font-size: 0.88rem;
-      font-weight: 700;
-      color: var(--text-primary);
-      background: rgba(255, 255, 255, 0.07);
-      border: 1px solid rgba(255, 255, 255, 0.18);
-      transition: transform 0.2s ease, border-color 0.2s ease;
+      background: linear-gradient(145deg, rgba(255, 255, 255, 0.24), rgba(255, 255, 255, 0.05));
+      border: 1.3px solid rgba(255, 255, 255, 0.36);
+      backdrop-filter: blur(18px);
+      -webkit-backdrop-filter: blur(18px);
+      box-shadow: 0 12px 28px rgba(0, 0, 0, 0.4), inset 0 1.5px 1px rgba(255, 255, 255, 0.5);
+      transition: transform 0.22s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.22s ease, border-color 0.22s ease;
     }
 
-    .social-btn.ig:hover {
-      transform: translateY(-2px);
-      border-color: rgba(244, 114, 182, 0.65);
+    .glass-icon-link::before {
+      content: "";
+      position: absolute;
+      inset: 2px;
+      border-radius: 19px;
+      background: linear-gradient(180deg, rgba(255, 255, 255, 0.24), transparent 55%);
+      pointer-events: none;
     }
 
-    .social-btn.wa:hover {
-      transform: translateY(-2px);
-      border-color: rgba(37, 211, 102, 0.65);
+    .glass-icon-link svg {
+      width: 34px;
+      height: 34px;
+      position: relative;
+      z-index: 1;
     }
 
-    .social-handle {
-      font-family: 'JetBrains Mono', monospace;
-      font-size: 0.78rem;
-      direction: ltr;
-      opacity: 0.9;
+    .glass-icon-link.ig {
+      box-shadow: 0 10px 28px rgba(225, 48, 108, 0.28), inset 0 1.5px 1px rgba(255, 255, 255, 0.5);
     }
 
-    .footer {
-      margin-top: 20px;
-      font-size: 0.78rem;
-      color: var(--text-secondary);
-      opacity: 0.85;
+    .glass-icon-link.ig:hover {
+      transform: translateY(-3px) scale(1.06);
+      border-color: rgba(244, 114, 182, 0.8);
+      box-shadow: 0 14px 36px rgba(225, 48, 108, 0.48), inset 0 1.5px 1px rgba(255, 255, 255, 0.65);
+    }
+
+    .glass-icon-link.wa {
+      box-shadow: 0 10px 28px rgba(37, 211, 102, 0.28), inset 0 1.5px 1px rgba(255, 255, 255, 0.5);
+    }
+
+    .glass-icon-link.wa:hover {
+      transform: translateY(-3px) scale(1.06);
+      border-color: rgba(52, 211, 153, 0.8);
+      box-shadow: 0 14px 36px rgba(37, 211, 102, 0.48), inset 0 1.5px 1px rgba(255, 255, 255, 0.65);
     }
   </style>
 </head>
 <body>
   <main class="glass-card">
-    <section class="dynamic-alerts" aria-live="polite">
-      <div id="server-alert" class="alert-banner status-online">
-        <div class="alert-content">
-          <span class="status-dot" aria-hidden="true"></span>
-          <span id="server-message">جاري التحقق من حالة خوادم الربط السحابي…</span>
-        </div>
-      </div>
-
-      <div id="update-alert" class="alert-banner update" style="display: none;">
-        <div class="alert-content">
-          <span aria-hidden="true">✨</span>
-          <span id="update-message"></span>
-        </div>
-        <button class="dismiss-btn" type="button" aria-label="إغلاق التنبيه" onclick="document.getElementById('update-alert').style.display='none'">×</button>
-      </div>
-    </section>
-
     <div class="app-badge" aria-hidden="true">🎙️</div>
     <h1>GlassWave</h1>
     <p class="subtitle">
@@ -340,65 +257,53 @@
       </div>
     </section>
 
-    <section class="social-section">
-      <div class="social-title">تواصل مع المطور</div>
-      <div class="social-row">
-        <a class="social-btn ig" href="https://www.instagram.com/0nusn/" target="_blank" rel="noopener noreferrer">
-          <span>إنستغرام</span>
-          <span class="social-handle">@0nusn</span>
+    <p class="footer">الإصدار <span id="version-label">2.2.0</span> &bull; Android 7.0+ &bull; GlassWave</p>
+
+    <section class="social-section" aria-label="للتواصل مع المطور">
+      <p class="social-title">للتواصل مع المطور</p>
+      <div class="social-icons">
+        <a class="glass-icon-link ig" href="https://www.instagram.com/0nusn/" target="_blank" rel="noopener noreferrer" aria-label="إنستغرام">
+          <svg viewBox="0 0 32 32" aria-hidden="true">
+            <defs>
+              <linearGradient id="igGrad" x1="0%" y1="100%" x2="100%" y2="0%">
+                <stop offset="0%" stop-color="#feda75" />
+                <stop offset="30%" stop-color="#fa7e1e" />
+                <stop offset="60%" stop-color="#d62976" />
+                <stop offset="100%" stop-color="#962fbf" />
+              </linearGradient>
+            </defs>
+            <rect x="2" y="2" width="28" height="28" rx="8" fill="url(#igGrad)" />
+            <rect x="7" y="7" width="18" height="18" rx="5" fill="none" stroke="#ffffff" stroke-width="2.1" />
+            <circle cx="16" cy="16" r="4.3" fill="none" stroke="#ffffff" stroke-width="2.1" />
+            <circle cx="21.4" cy="10.6" r="1.3" fill="#ffffff" />
+          </svg>
         </a>
-        <a class="social-btn wa" href="https://wa.me/9647746088000" target="_blank" rel="noopener noreferrer">
-          <span>واتساب</span>
-          <span class="social-handle">+964 774 608 8000</span>
+        <a class="glass-icon-link wa" href="https://wa.me/9647746088000" target="_blank" rel="noopener noreferrer" aria-label="واتساب">
+          <svg viewBox="0 0 32 32" aria-hidden="true">
+            <defs>
+              <linearGradient id="waGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stop-color="#4ade80" />
+                <stop offset="100%" stop-color="#16a34a" />
+              </linearGradient>
+            </defs>
+            <circle cx="16" cy="16" r="14" fill="url(#waGrad)" />
+            <path d="M16 6.8a9.2 9.2 0 0 0-8 13.7L6.8 25l4.7-1.2A9.2 9.2 0 1 0 16 6.8z" fill="none" stroke="#ffffff" stroke-width="2" stroke-linejoin="round" />
+            <path d="M12.5 11.7c.3 2.5 2.7 4.9 5.2 5.2l1.2-1.1c.3-.3.7-.3 1-.2l1.6.7c.4.2.6.5.6.9v1.2c0 .6-.5 1.1-1.2 1-4.8-.6-8.6-4.4-9.2-9.2-.1-.7.4-1.2 1-1.2h1.2c.4 0 .7.2.9.6l.7 1.6c.1.3.1.7-.2 1l-.8.5z" fill="#ffffff" />
+          </svg>
         </a>
       </div>
     </section>
-
-    <p class="footer">الإصدار <span id="version-label">2.1.0</span> &bull; Android 7.0+ &bull; GlassWave</p>
   </main>
 
   <script>
-    async function loadDynamicStatus() {
-      const serverAlert = document.getElementById("server-alert");
-      const serverMsg = document.getElementById("server-message");
-      const updateAlert = document.getElementById("update-alert");
-      const updateMsg = document.getElementById("update-message");
-      const versionLabel = document.getElementById("version-label");
-
-      try {
-        const res = await fetch("./status.json?t=" + Date.now(), { cache: "no-store" });
-        if (!res.ok) throw new Error("Status unavailable");
-        const data = await res.json();
-
-        serverAlert.classList.remove("status-online", "status-maintenance", "status-offline");
-        if (data.serverStatus === "maintenance") {
-          serverAlert.classList.add("status-maintenance");
-        } else if (data.serverStatus === "offline") {
-          serverAlert.classList.add("status-offline");
-        } else {
-          serverAlert.classList.add("status-online");
+    fetch("./status.json?t=" + Date.now(), { cache: "no-store" })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data && data.latestVersion) {
+          document.getElementById("version-label").textContent = data.latestVersion;
         }
-
-        serverMsg.textContent = data.serverMessage || "خوادم الربط السحابي تعمل بكفاءة عالية";
-
-        if (data.latestVersion) {
-          versionLabel.textContent = data.latestVersion;
-        }
-
-        if (data.hasUpdate && data.updateMessage) {
-          updateMsg.textContent = data.updateMessage;
-          updateAlert.style.display = "flex";
-        } else {
-          updateAlert.style.display = "none";
-        }
-      } catch (_) {
-        serverAlert.classList.remove("status-maintenance", "status-offline");
-        serverAlert.classList.add("status-online");
-        serverMsg.textContent = "خوادم الربط السحابي جاهزة للاتصال";
-      }
-    }
-
-    loadDynamicStatus();
+      })
+      .catch(() => {});
   </script>
 </body>
 </html>
