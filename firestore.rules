@@ -92,6 +92,14 @@ service cloud.firestore {
                          (
                            request.auth.uid in existing().memberUids &&
                            incoming().diff(existing()).affectedKeys().hasOnly(['activeSpeakerUid', 'activeSpeakerName', 'updatedAt'])
+                         ) ||
+                         // Action 3: Leave room by removing only self from memberUids
+                         (
+                           request.auth.uid in existing().memberUids &&
+                           !(request.auth.uid in incoming().memberUids) &&
+                           existing().memberUids.hasAll(incoming().memberUids) &&
+                           incoming().memberUids.size() == existing().memberUids.size() - 1 &&
+                           incoming().diff(existing()).affectedKeys().hasOnly(['memberUids', 'updatedAt'])
                          )
                        );
 

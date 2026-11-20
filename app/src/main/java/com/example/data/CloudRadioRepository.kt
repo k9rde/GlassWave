@@ -199,13 +199,58 @@ class CloudRadioRepository(private val db: FirebaseFirestore) {
         }
     }
 
-    suspend fun updateActiveSpeaker(roomId: String, speaking: Boolean): Result<Unit> {
+    suspend fun leaveRoom(room: CloudRoom): Result<Unit> {
+        val path = "rooms/${room.id}"
+        return try {
+            val uid = requireUserId()
+            val remaining = room.memberUids.filter { it != uid }
+            if (remaining.isEmpty()) {
+                if (room.ownerId == uid) {
+                    db.collection("rooms").document(room.id).delete().await()
+                }
+                return Result.success(Unit)
+            }
+            db.collection("rooms").document(room.id).update(
+                mapOf(
+                    "memberUids" to remaining,
+                    "updatedAt" to FieldValue.serverTimestamp()
+                )
+            ).await()
+            Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.UPDATE, path)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun deleteRoom(roomId: String): Result<Unit> {
+        val path = "rooms/$roomId"
+        return try {
+            requireUserId()
+            db.collection("rooms").document(roomId).delete().await()
+            Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.DELETE, path)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun updateActiveSpeaker(
+        roomId: String,
+        speaking: Boolean,
+        speakerName: String? = null
+    ): Result<Unit> {
         val path = "rooms/$roomId"
         return try {
             val uid = requireUserId()
+            val name = speakerName?.trim()?.take(40)?.ifBlank { currentDisplayName() } ?: currentDisplayName()
             val payload = mapOf(
                 "activeSpeakerUid" to if (speaking) uid else "",
-                "activeSpeakerName" to if (speaking) currentDisplayName() else "",
+                "activeSpeakerName" to if (speaking) name else "",
                 "updatedAt" to FieldValue.serverTimestamp()
             )
             db.collection("rooms").document(roomId).update(payload).await()
@@ -221,7 +266,8 @@ class CloudRadioRepository(private val db: FirebaseFirestore) {
     suspend fun sendVoicePacket(
         roomId: String,
         memberUids: List<String>,
-        audioBase64: String
+        audioBase64: String,
+        speakerName: String? = null
     ): Result<Unit> {
         val docRef = db.collection("rooms").document(roomId).collection("packets").document()
         val path = docRef.path
@@ -231,9 +277,10 @@ class CloudRadioRepository(private val db: FirebaseFirestore) {
                 return Result.failure(IllegalArgumentException("حجم الحزمة الصوتية غير صالح"))
             }
             val safeMembers = if (uid in memberUids) memberUids.take(25) else (memberUids + uid).take(25)
+            val name = speakerName?.trim()?.take(40)?.ifBlank { currentDisplayName() } ?: currentDisplayName()
             val payload = mapOf(
                 "senderUid" to uid,
-                "senderName" to currentDisplayName(),
+                "senderName" to name,
                 "audioBase64" to audioBase64,
                 "memberUids" to safeMembers,
                 "createdAt" to FieldValue.serverTimestamp()

@@ -1,10 +1,14 @@
 package com.example.ui
 
 import android.Manifest
+import android.app.Activity
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.os.Build
+import android.view.WindowManager
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -40,6 +44,8 @@ import androidx.compose.material.icons.rounded.Podcasts
 import androidx.compose.material.icons.rounded.PowerSettingsNew
 import androidx.compose.material.icons.rounded.Public
 import androidx.compose.material.icons.rounded.Radio
+import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.VolumeOff
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -50,13 +56,17 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.delay
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
@@ -97,19 +107,76 @@ fun WalkieTalkieScreen(
 
     var showCreateDialog by remember { mutableStateOf(false) }
     var showJoinDialog by remember { mutableStateOf(false) }
+    var showSettings by remember { mutableStateOf(false) }
+    var txSeconds by remember { mutableIntStateOf(0) }
 
-    val permissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission()
-    ) { granted ->
-        viewModel.onMicPermissionChanged(granted)
+    val requiredPermissions = remember {
+        buildList {
+            add(Manifest.permission.RECORD_AUDIO)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                add(Manifest.permission.POST_NOTIFICATIONS)
+            }
+        }.toTypedArray()
     }
 
+    val multiPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions()
+    ) { results ->
+        val micGranted = results[Manifest.permission.RECORD_AUDIO]
+            ?: (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED)
+        viewModel.onMicPermissionChanged(micGranted)
+    }
+
+    // Automatically request all required permissions on first entry
     LaunchedEffect(Unit) {
-        val granted = ContextCompat.checkSelfPermission(
+        val micGranted = ContextCompat.checkSelfPermission(
             context,
             Manifest.permission.RECORD_AUDIO
         ) == PackageManager.PERMISSION_GRANTED
-        viewModel.onMicPermissionChanged(granted)
+        viewModel.onMicPermissionChanged(micGranted)
+
+        val missing = requiredPermissions.filter { perm ->
+            ContextCompat.checkSelfPermission(context, perm) != PackageManager.PERMISSION_GRANTED
+        }
+        if (missing.isNotEmpty()) {
+            multiPermissionLauncher.launch(missing.toTypedArray())
+        }
+    }
+
+    // Keep screen awake when enabled in Settings
+    DisposableEffect(state.settings.keepScreenOn) {
+        val window = (context as? Activity)?.window
+        if (state.settings.keepScreenOn) {
+            window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        } else {
+            window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
+        onDispose {
+            window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
+    }
+
+    // Live transmission duration timer
+    LaunchedEffect(state.isTransmitting) {
+        if (state.isTransmitting) {
+            txSeconds = 0
+            while (true) {
+                delay(1000L)
+                txSeconds++
+            }
+        } else {
+            txSeconds = 0
+        }
+    }
+
+    if (showSettings) {
+        SettingsScreen(
+            state = state,
+            viewModel = viewModel,
+            onBack = { showSettings = false },
+            onSignOutClick = onSignOutClick
+        )
+        return
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
@@ -134,11 +201,14 @@ fun WalkieTalkieScreen(
             TopGlassHeader(
                 refreshRateHz = state.refreshRateHz,
                 rogerBeepEnabled = state.rogerBeepEnabled,
+                iconOpacity = state.settings.glassOpacity,
                 onToggleRogerBeep = {
-                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    if (state.settings.hapticEnabled) {
+                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    }
                     viewModel.toggleRogerBeep()
                 },
-                onSignOutClick = onSignOutClick
+                onOpenSettings = { showSettings = true }
             )
 
             // Cloud Room Card (Works across any house / any network!)
@@ -150,6 +220,14 @@ fun WalkieTalkieScreen(
                     val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
                     clipboard?.setPrimaryClip(ClipData.newPlainText("GlassWave Room", code))
                     Toast.makeText(context, "تم نسخ رمز الغرفة: $code", Toast.LENGTH_SHORT).show()
+                },
+                onShareRoom = { room ->
+                    val shareText = "انضم معي في غرفة اللاسلكي (${room.roomName}) على تطبيق GlassWave!\nرمز الغرفة: ${room.roomCode}\nرابط تحميل التطبيق: https://k9rde.github.io/GlassWave/"
+                    val intent = Intent(Intent.ACTION_SEND).apply {
+                        type = "text/plain"
+                        putExtra(Intent.EXTRA_TEXT, shareText)
+                    }
+                    context.startActivity(Intent.createChooser(intent, "مشاركة دعوة الغرفة"))
                 }
             )
 
@@ -162,7 +240,7 @@ fun WalkieTalkieScreen(
                 if (!state.hasMicPermission) {
                     MicPermissionGlassBanner(
                         onRequestPermission = {
-                            permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                            multiPermissionLauncher.launch(requiredPermissions)
                         }
                     )
                 } else if (state.errorMessage != null) {
@@ -188,7 +266,7 @@ fun WalkieTalkieScreen(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                LiveStatusPill(state = state)
+                LiveStatusPill(state = state, txSeconds = txSeconds)
 
                 LiquidGlassPttOrb(
                     mode = state.mode,
@@ -197,11 +275,15 @@ fun WalkieTalkieScreen(
                     micLevel = state.micLevel,
                     enabled = state.hasMicPermission && state.activeRoom != null,
                     onPressStart = {
-                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        if (state.settings.hapticEnabled) {
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        }
                         viewModel.onPttPressStart()
                     },
                     onPressEnd = {
-                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        if (state.settings.hapticEnabled) {
+                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        }
                         viewModel.onPttPressEnd()
                     }
                 )
@@ -235,11 +317,13 @@ fun WalkieTalkieScreen(
                     testTag = "always_on_button",
                     onClick = {
                         if (!state.hasMicPermission) {
-                            permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                            multiPermissionLauncher.launch(requiredPermissions)
                         } else if (state.activeRoom == null) {
                             showCreateDialog = true
                         } else {
-                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            if (state.settings.hapticEnabled) {
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            }
                             viewModel.toggleAlwaysOn()
                         }
                     },
@@ -342,8 +426,9 @@ fun WalkieTalkieScreen(
 private fun TopGlassHeader(
     refreshRateHz: Int,
     rogerBeepEnabled: Boolean,
+    iconOpacity: Float,
     onToggleRogerBeep: () -> Unit,
-    onSignOutClick: () -> Unit
+    onOpenSettings: () -> Unit
 ) {
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -360,7 +445,8 @@ private fun TopGlassHeader(
                 accentColor = LiquidCyan,
                 isActive = true,
                 size = 46.dp,
-                iconSize = 24.dp
+                iconSize = 24.dp,
+                modifier = Modifier.alpha(iconOpacity)
             )
             Column {
                 Text(
@@ -396,7 +482,8 @@ private fun TopGlassHeader(
                 shape = RoundedCornerShape(14.dp),
                 accentColor = LiquidCyan,
                 tintAlpha = 0.12f,
-                borderAlpha = 0.35f
+                borderAlpha = 0.35f,
+                modifier = Modifier.alpha(iconOpacity)
             ) {
                 Row(
                     modifier = Modifier.padding(horizontal = 9.dp, vertical = 6.dp),
@@ -427,18 +514,22 @@ private fun TopGlassHeader(
                 size = 42.dp,
                 iconSize = 20.dp,
                 onClick = onToggleRogerBeep,
-                modifier = Modifier.testTag("roger_beep_toggle")
+                modifier = Modifier
+                    .alpha(iconOpacity)
+                    .testTag("roger_beep_toggle")
             )
 
             LuxuryGlassIconBadge(
-                icon = Icons.AutoMirrored.Rounded.Logout,
-                contentDescription = "تسجيل الخروج",
-                accentColor = RubyCrimson,
-                isActive = false,
+                icon = Icons.Rounded.Settings,
+                contentDescription = "الإعدادات",
+                accentColor = LiquidCyan,
+                isActive = true,
                 size = 42.dp,
                 iconSize = 20.dp,
-                onClick = onSignOutClick,
-                modifier = Modifier.testTag("sign_out_button")
+                onClick = onOpenSettings,
+                modifier = Modifier
+                    .alpha(iconOpacity)
+                    .testTag("open_settings_button")
             )
         }
     }
@@ -449,7 +540,8 @@ private fun CloudRoomGlassCard(
     activeRoom: CloudRoom?,
     onCreateRoomClick: () -> Unit,
     onJoinRoomClick: () -> Unit,
-    onCopyCode: (String) -> Unit
+    onCopyCode: (String) -> Unit,
+    onShareRoom: (CloudRoom) -> Unit
 ) {
     LiquidGlassSurface(
         modifier = Modifier.fillMaxWidth(),
@@ -476,21 +568,34 @@ private fun CloudRoomGlassCard(
                         )
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            modifier = Modifier.clickable { onCopyCode(activeRoom.roomCode) }
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            Text(
-                                text = activeRoom.roomCode,
-                                style = MaterialTheme.typography.headlineMedium,
-                                fontFamily = JetBrainsMonoFontFamily,
-                                fontWeight = FontWeight.Bold,
-                                color = GlassWhite
-                            )
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                modifier = Modifier.clickable { onCopyCode(activeRoom.roomCode) }
+                            ) {
+                                Text(
+                                    text = activeRoom.roomCode,
+                                    style = MaterialTheme.typography.headlineMedium,
+                                    fontFamily = JetBrainsMonoFontFamily,
+                                    fontWeight = FontWeight.Bold,
+                                    color = GlassWhite
+                                )
+                                Icon(
+                                    imageVector = Icons.Rounded.ContentCopy,
+                                    contentDescription = "نسخ الرمز",
+                                    tint = LiquidCyan,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
                             Icon(
-                                imageVector = Icons.Rounded.ContentCopy,
-                                contentDescription = "نسخ الرمز",
-                                tint = LiquidCyan,
-                                modifier = Modifier.size(18.dp)
+                                imageVector = Icons.Rounded.Share,
+                                contentDescription = "مشاركة دعوة الغرفة",
+                                tint = LuminousEmerald,
+                                modifier = Modifier
+                                    .size(20.dp)
+                                    .clickable { onShareRoom(activeRoom) }
                             )
                         }
                     }
@@ -601,7 +706,7 @@ private fun CloudRoomGlassCard(
 }
 
 @Composable
-private fun LiveStatusPill(state: WalkieTalkieUiState) {
+private fun LiveStatusPill(state: WalkieTalkieUiState, txSeconds: Int) {
     val remoteSpeaker = state.activeRoom?.activeSpeakerName?.takeIf {
         it.isNotBlank() && state.isReceiving
     }
@@ -611,10 +716,16 @@ private fun LiveStatusPill(state: WalkieTalkieUiState) {
         state.isReceiving -> LiquidCyan
         else -> ElectricSapphire
     }
+    val timerText = if (state.isTransmitting) {
+        val mins = txSeconds / 60
+        val secs = txSeconds % 60
+        " • %02d:%02d".format(mins, secs)
+    } else ""
+
     val statusText = when {
         state.mode == RadioMode.ALWAYS_OFF -> stringResource(R.string.status_always_off)
-        state.mode == RadioMode.ALWAYS_ON -> stringResource(R.string.status_always_on)
-        state.isTransmitting -> stringResource(R.string.status_transmitting)
+        state.mode == RadioMode.ALWAYS_ON -> stringResource(R.string.status_always_on) + timerText
+        state.isTransmitting -> stringResource(R.string.status_transmitting) + timerText
         remoteSpeaker != null -> "$remoteSpeaker يتحدث الآن…"
         state.isReceiving -> stringResource(R.string.status_receiving)
         else -> stringResource(R.string.status_ready)

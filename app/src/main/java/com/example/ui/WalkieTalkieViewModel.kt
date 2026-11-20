@@ -8,6 +8,10 @@ import androidx.lifecycle.viewModelScope
 import com.example.audio.WalkieTalkieAudioEngine
 import com.example.data.CloudRadioRepository
 import com.example.data.CloudRoom
+import com.example.data.UserSettings
+import com.example.data.UserSettingsStore
+import com.google.firebase.Firebase
+import com.google.firebase.auth.auth
 import com.google.firebase.firestore.FirebaseFirestoreException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -38,7 +42,10 @@ data class WalkieTalkieUiState(
     val refreshRateHz: Int = 120,
     val hasMicPermission: Boolean = false,
     val isBusy: Boolean = false,
-    val errorMessage: String? = null
+    val errorMessage: String? = null,
+    val settings: UserSettings = UserSettings(),
+    val currentUserId: String = "",
+    val currentUserEmail: String = ""
 )
 
 class WalkieTalkieViewModel(
@@ -47,8 +54,26 @@ class WalkieTalkieViewModel(
 ) : AndroidViewModel(application) {
 
     private val repository = CloudRadioRepository(application)
+    private val settingsStore = UserSettingsStore(application, currentUserId)
     private val audioEngine = WalkieTalkieAudioEngine()
-    private val localState = MutableStateFlow(WalkieTalkieUiState())
+
+    private val initialSettings = settingsStore.load(
+        defaultName = Firebase.auth.currentUser?.displayName ?: "صديق"
+    )
+
+    private val initialMode = RadioMode.entries.firstOrNull {
+        it.name == initialSettings.savedRadioMode
+    } ?: RadioMode.PUSH_TO_TALK
+
+    private val localState = MutableStateFlow(
+        WalkieTalkieUiState(
+            mode = initialMode,
+            rogerBeepEnabled = initialSettings.rogerBeepEnabled,
+            settings = initialSettings,
+            currentUserId = currentUserId,
+            currentUserEmail = Firebase.auth.currentUser?.email ?: ""
+        )
+    )
 
     private var roomsJob: Job? = null
     private var roomDetailJob: Job? = null
@@ -70,15 +95,18 @@ class WalkieTalkieViewModel(
         state.copy(
             isTransmitting = activelyTransmitting,
             isReceiving = if (state.mode == RadioMode.ALWAYS_OFF) false else isReceiving,
-            micLevel = if (activelyTransmitting) micLevel else 0f
+            micLevel = if (activelyTransmitting) (micLevel * state.settings.micGain).coerceIn(0f, 1f) else 0f
         )
     }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5000L),
-        initialValue = WalkieTalkieUiState()
+        initialValue = localState.value
     )
 
     init {
+        if (initialMode == RadioMode.ALWAYS_OFF) {
+            audioEngine.setMuted(true)
+        }
         if (currentUserId.isNotBlank()) {
             observeRooms()
         }
@@ -104,6 +132,11 @@ class WalkieTalkieViewModel(
                     localState.update { it.copy(myRooms = rooms, errorMessage = null) }
                     if (matched != null && matched.id != currentActiveId) {
                         selectRoom(matched)
+                    } else if (matched == null && currentActiveId != null) {
+                        stopAllTransmission()
+                        roomDetailJob?.cancel()
+                        packetsJob?.cancel()
+                        localState.update { it.copy(activeRoom = null) }
                     }
                 }
         }
@@ -114,6 +147,9 @@ class WalkieTalkieViewModel(
         stopAllTransmission()
         localState.update { it.copy(activeRoom = room, errorMessage = null) }
         attachRoomListeners(room.id)
+        if (localState.value.mode == RadioMode.ALWAYS_ON && localState.value.hasMicPermission) {
+            beginCloudTransmission()
+        }
     }
 
     private fun attachRoomListeners(roomId: String) {
@@ -147,7 +183,6 @@ class WalkieTalkieViewModel(
                 }
                 .collect { packets ->
                     if (!initialPacketsLoaded) {
-                        // Skip historical packets on initial attach; only play live incoming voice
                         packets.forEach { playedPacketIds.add(it.id) }
                         initialPacketsLoaded = true
                         return@collect
@@ -213,8 +248,60 @@ class WalkieTalkieViewModel(
         }
     }
 
-    fun clearError() {
-        localState.update { it.copy(errorMessage = null) }
+    fun leaveActiveRoom() {
+        val room = localState.value.activeRoom ?: return
+        viewModelScope.launch {
+            stopAllTransmission()
+            localState.update { it.copy(isBusy = true, errorMessage = null) }
+            repository.leaveRoom(room)
+                .onSuccess {
+                    roomDetailJob?.cancel()
+                    packetsJob?.cancel()
+                    localState.update { it.copy(isBusy = false, activeRoom = null) }
+                }
+                .onFailure { err ->
+                    localState.update {
+                        it.copy(
+                            isBusy = false,
+                            errorMessage = err.localizedMessage ?: "تعذر الخروج من الغرفة"
+                        )
+                    }
+                }
+        }
+    }
+
+    fun deleteActiveRoom() {
+        val room = localState.value.activeRoom ?: return
+        if (room.ownerId != currentUserId) return
+        viewModelScope.launch {
+            stopAllTransmission()
+            localState.update { it.copy(isBusy = true, errorMessage = null) }
+            repository.deleteRoom(room.id)
+                .onSuccess {
+                    roomDetailJob?.cancel()
+                    packetsJob?.cancel()
+                    localState.update { it.copy(isBusy = false, activeRoom = null) }
+                }
+                .onFailure { err ->
+                    localState.update {
+                        it.copy(
+                            isBusy = false,
+                            errorMessage = err.localizedMessage ?: "تعذر حذف الغرفة"
+                        )
+                    }
+                }
+        }
+    }
+
+    fun updateSettings(transform: (UserSettings) -> UserSettings) {
+        val updated = transform(localState.value.settings)
+        settingsStore.save(updated)
+        localState.update {
+            it.copy(
+                settings = updated,
+                rogerBeepEnabled = updated.rogerBeepEnabled
+            )
+        }
     }
 
     fun updateRefreshRate(hz: Int) {
@@ -249,11 +336,15 @@ class WalkieTalkieViewModel(
         val current = localState.value
         if (!current.hasMicPermission || current.activeRoom == null) return
         if (current.mode == RadioMode.ALWAYS_ON) {
-            localState.update { it.copy(mode = RadioMode.PUSH_TO_TALK, isPttPressed = false) }
+            val newMode = RadioMode.PUSH_TO_TALK
+            updateSettings { it.copy(savedRadioMode = newMode.name) }
+            localState.update { it.copy(mode = newMode, isPttPressed = false) }
             audioEngine.setMuted(false)
             stopAllTransmission(playTone = current.rogerBeepEnabled)
         } else {
-            localState.update { it.copy(mode = RadioMode.ALWAYS_ON, isPttPressed = false) }
+            val newMode = RadioMode.ALWAYS_ON
+            updateSettings { it.copy(savedRadioMode = newMode.name) }
+            localState.update { it.copy(mode = newMode, isPttPressed = false) }
             audioEngine.setMuted(false)
             beginCloudTransmission()
         }
@@ -262,23 +353,28 @@ class WalkieTalkieViewModel(
     fun toggleAlwaysOff() {
         val current = localState.value
         if (current.mode == RadioMode.ALWAYS_OFF) {
-            localState.update { it.copy(mode = RadioMode.PUSH_TO_TALK, isPttPressed = false) }
+            val newMode = RadioMode.PUSH_TO_TALK
+            updateSettings { it.copy(savedRadioMode = newMode.name) }
+            localState.update { it.copy(mode = newMode, isPttPressed = false) }
             audioEngine.setMuted(false)
         } else {
-            localState.update { it.copy(mode = RadioMode.ALWAYS_OFF, isPttPressed = false) }
+            val newMode = RadioMode.ALWAYS_OFF
+            updateSettings { it.copy(savedRadioMode = newMode.name) }
+            localState.update { it.copy(mode = newMode, isPttPressed = false) }
             audioEngine.setMuted(true)
             stopAllTransmission(playTone = false)
         }
     }
 
     fun toggleRogerBeep() {
-        localState.update { it.copy(rogerBeepEnabled = !it.rogerBeepEnabled) }
+        updateSettings { it.copy(rogerBeepEnabled = !it.rogerBeepEnabled) }
     }
 
     private fun beginCloudTransmission() {
         val room = localState.value.activeRoom ?: return
+        val speakerName = localState.value.settings.displayName
         viewModelScope.launch {
-            repository.updateActiveSpeaker(room.id, speaking = true)
+            repository.updateActiveSpeaker(room.id, speaking = true, speakerName = speakerName)
         }
         audioEngine.startTransmitting(
             playTone = localState.value.rogerBeepEnabled,
@@ -288,7 +384,8 @@ class WalkieTalkieViewModel(
                     repository.sendVoicePacket(
                         roomId = active.id,
                         memberUids = active.memberUids,
-                        audioBase64 = audioBase64
+                        audioBase64 = audioBase64,
+                        speakerName = localState.value.settings.displayName
                     )
                 }
             }

@@ -14,6 +14,7 @@
       --cyan: #38bdf8;
       --sapphire: #3b82f6;
       --emerald: #10b981;
+      --amber: #f59e0b;
       --ruby: #f43f5e;
       --text-primary: #f8fafc;
       --text-secondary: #94a3b8;
@@ -41,7 +42,7 @@
     .glass-card {
       width: 100%;
       max-width: 480px;
-      padding: 32px 26px;
+      padding: 28px 24px;
       border-radius: 32px;
       background: linear-gradient(135deg, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0.04));
       border: 1.2px solid rgba(255, 255, 255, 0.26);
@@ -51,10 +52,98 @@
       text-align: center;
     }
 
+    .dynamic-alerts {
+      display: grid;
+      gap: 10px;
+      margin-bottom: 22px;
+      text-align: right;
+    }
+
+    .alert-banner {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 12px 14px;
+      border-radius: 18px;
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      font-size: 0.86rem;
+      line-height: 1.5;
+      transition: opacity 0.25s ease, transform 0.25s ease;
+    }
+
+    .alert-banner.update {
+      background: linear-gradient(135deg, rgba(56, 189, 248, 0.2), rgba(59, 130, 246, 0.08));
+      border-color: rgba(56, 189, 248, 0.45);
+    }
+
+    .alert-banner.status-online {
+      background: linear-gradient(135deg, rgba(16, 185, 129, 0.18), rgba(16, 185, 129, 0.06));
+      border-color: rgba(16, 185, 129, 0.42);
+    }
+
+    .alert-banner.status-maintenance {
+      background: linear-gradient(135deg, rgba(245, 158, 11, 0.2), rgba(245, 158, 11, 0.06));
+      border-color: rgba(245, 158, 11, 0.45);
+    }
+
+    .alert-banner.status-offline {
+      background: linear-gradient(135deg, rgba(244, 63, 94, 0.2), rgba(244, 63, 94, 0.06));
+      border-color: rgba(244, 63, 94, 0.45);
+    }
+
+    .alert-content {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex: 1;
+    }
+
+    .status-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      flex-shrink: 0;
+      background: var(--emerald);
+      box-shadow: 0 0 12px var(--emerald);
+      animation: pulse 1.8s infinite;
+    }
+
+    .status-maintenance .status-dot {
+      background: var(--amber);
+      box-shadow: 0 0 12px var(--amber);
+    }
+
+    .status-offline .status-dot {
+      background: var(--ruby);
+      box-shadow: 0 0 12px var(--ruby);
+      animation: none;
+    }
+
+    .dismiss-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-secondary);
+      font-size: 1.1rem;
+      cursor: pointer;
+      padding: 0 4px;
+      line-height: 1;
+    }
+
+    .dismiss-btn:hover {
+      color: var(--text-primary);
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.45; transform: scale(0.85); }
+    }
+
     .app-badge {
-      width: 86px;
-      height: 86px;
-      margin: 0 auto 18px;
+      width: 82px;
+      height: 82px;
+      margin: 0 auto 16px;
       border-radius: 24px;
       background: linear-gradient(135deg, rgba(56, 189, 248, 0.36), rgba(59, 130, 246, 0.14));
       border: 1.5px solid rgba(255, 255, 255, 0.45);
@@ -62,7 +151,7 @@
       align-items: center;
       justify-content: center;
       box-shadow: 0 12px 32px rgba(56, 189, 248, 0.28);
-      font-size: 38px;
+      font-size: 36px;
     }
 
     h1 {
@@ -74,9 +163,9 @@
 
     .subtitle {
       color: var(--text-secondary);
-      font-size: 0.98rem;
+      font-size: 0.96rem;
       line-height: 1.6;
-      margin-bottom: 22px;
+      margin-bottom: 20px;
     }
 
     .pills {
@@ -84,7 +173,7 @@
       flex-wrap: wrap;
       gap: 8px;
       justify-content: center;
-      margin-bottom: 26px;
+      margin-bottom: 24px;
     }
 
     .pill {
@@ -125,7 +214,7 @@
     }
 
     .features {
-      margin-top: 24px;
+      margin-top: 22px;
       text-align: right;
       display: grid;
       gap: 10px;
@@ -145,15 +234,32 @@
     }
 
     .footer {
-      margin-top: 22px;
+      margin-top: 20px;
       font-size: 0.78rem;
       color: var(--text-secondary);
-      opacity: 0.8;
+      opacity: 0.85;
     }
   </style>
 </head>
 <body>
   <main class="glass-card">
+    <section class="dynamic-alerts" aria-live="polite">
+      <div id="server-alert" class="alert-banner status-online">
+        <div class="alert-content">
+          <span class="status-dot" aria-hidden="true"></span>
+          <span id="server-message">جاري التحقق من حالة خوادم الربط السحابي…</span>
+        </div>
+      </div>
+
+      <div id="update-alert" class="alert-banner update" style="display: none;">
+        <div class="alert-content">
+          <span aria-hidden="true">✨</span>
+          <span id="update-message"></span>
+        </div>
+        <button class="dismiss-btn" type="button" aria-label="إغلاق التنبيه" onclick="document.getElementById('update-alert').style.display='none'">×</button>
+      </div>
+    </section>
+
     <div class="app-badge" aria-hidden="true">🎙️</div>
     <h1>GlassWave</h1>
     <p class="subtitle">
@@ -182,7 +288,51 @@
       </div>
     </section>
 
-    <p class="footer">الإصدار 1.0 &bull; Android 7.0+ &bull; GlassWave</p>
+    <p class="footer">الإصدار <span id="version-label">1.0.0</span> &bull; Android 7.0+ &bull; GlassWave</p>
   </main>
+
+  <script>
+    async function loadDynamicStatus() {
+      const serverAlert = document.getElementById("server-alert");
+      const serverMsg = document.getElementById("server-message");
+      const updateAlert = document.getElementById("update-alert");
+      const updateMsg = document.getElementById("update-message");
+      const versionLabel = document.getElementById("version-label");
+
+      try {
+        const res = await fetch("./status.json?t=" + Date.now(), { cache: "no-store" });
+        if (!res.ok) throw new Error("Status unavailable");
+        const data = await res.json();
+
+        serverAlert.classList.remove("status-online", "status-maintenance", "status-offline");
+        if (data.serverStatus === "maintenance") {
+          serverAlert.classList.add("status-maintenance");
+        } else if (data.serverStatus === "offline") {
+          serverAlert.classList.add("status-offline");
+        } else {
+          serverAlert.classList.add("status-online");
+        }
+
+        serverMsg.textContent = data.serverMessage || "خوادم الربط السحابي تعمل بكفاءة عالية";
+
+        if (data.latestVersion) {
+          versionLabel.textContent = data.latestVersion;
+        }
+
+        if (data.hasUpdate && data.updateMessage) {
+          updateMsg.textContent = data.updateMessage;
+          updateAlert.style.display = "flex";
+        } else {
+          updateAlert.style.display = "none";
+        }
+      } catch (_) {
+        serverAlert.classList.remove("status-maintenance", "status-offline");
+        serverAlert.classList.add("status-online");
+        serverMsg.textContent = "خوادم الربط السحابي جاهزة للاتصال";
+      }
+    }
+
+    loadDynamicStatus();
+  </script>
 </body>
 </html>

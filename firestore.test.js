@@ -148,6 +148,14 @@ test("Authenticated user can create room, friend can join, and both can exchange
       updatedAt: new Date(Date.now() - 500),
     })
   );
+
+  // Bob can leave the room by removing only himself
+  await assertSucceeds(
+    bobDb.collection("rooms").doc("WAVE42").update({
+      memberUids: [ALICE_UID],
+      updatedAt: new Date(Date.now() - 200),
+    })
+  );
 });
 
 test("Rejects shadow fields, immutable field edits, and unfiltered room list queries", async () => {
