@@ -233,6 +233,58 @@
       color: var(--text-primary);
     }
 
+    .social-section {
+      margin-top: 20px;
+      padding-top: 16px;
+      border-top: 1px solid rgba(255, 255, 255, 0.12);
+    }
+
+    .social-title {
+      font-size: 0.85rem;
+      color: var(--text-secondary);
+      margin-bottom: 10px;
+      font-weight: 600;
+    }
+
+    .social-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+
+    .social-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 11px 12px;
+      border-radius: 16px;
+      text-decoration: none;
+      font-size: 0.88rem;
+      font-weight: 700;
+      color: var(--text-primary);
+      background: rgba(255, 255, 255, 0.07);
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      transition: transform 0.2s ease, border-color 0.2s ease;
+    }
+
+    .social-btn.ig:hover {
+      transform: translateY(-2px);
+      border-color: rgba(244, 114, 182, 0.65);
+    }
+
+    .social-btn.wa:hover {
+      transform: translateY(-2px);
+      border-color: rgba(37, 211, 102, 0.65);
+    }
+
+    .social-handle {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.78rem;
+      direction: ltr;
+      opacity: 0.9;
+    }
+
     .footer {
       margin-top: 20px;
       font-size: 0.78rem;
@@ -288,7 +340,21 @@
       </div>
     </section>
 
-    <p class="footer">الإصدار <span id="version-label">1.0.0</span> &bull; Android 7.0+ &bull; GlassWave</p>
+    <section class="social-section">
+      <div class="social-title">تواصل مع المطور</div>
+      <div class="social-row">
+        <a class="social-btn ig" href="https://www.instagram.com/0nusn/" target="_blank" rel="noopener noreferrer">
+          <span>إنستغرام</span>
+          <span class="social-handle">@0nusn</span>
+        </a>
+        <a class="social-btn wa" href="https://wa.me/9647746088000" target="_blank" rel="noopener noreferrer">
+          <span>واتساب</span>
+          <span class="social-handle">+964 774 608 8000</span>
+        </a>
+      </div>
+    </section>
+
+    <p class="footer">الإصدار <span id="version-label">2.1.0</span> &bull; Android 7.0+ &bull; GlassWave</p>
   </main>
 
   <script>
