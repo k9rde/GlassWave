@@ -23,6 +23,12 @@ data class AppUpdateInfo(
     val isUpdateAvailable: Boolean
 )
 
+data class DownloadProgress(
+    val percent: Int,
+    val downloadedBytes: Long,
+    val totalBytes: Long
+)
+
 enum class ApkInstallResult {
     LAUNCHED_INSTALLER,
     NEEDS_UNKNOWN_SOURCES_PERMISSION,
@@ -40,7 +46,7 @@ object AppUpdateChecker {
 
     private val downloadClient = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
-        .readTimeout(90, TimeUnit.SECONDS)
+        .readTimeout(120, TimeUnit.SECONDS)
         .followRedirects(true)
         .followSslRedirects(true)
         .build()
@@ -78,7 +84,7 @@ object AppUpdateChecker {
     suspend fun downloadUpdateApk(
         context: Context,
         url: String,
-        onProgress: (Int) -> Unit
+        onProgress: (DownloadProgress) -> Unit
     ): Result<File> = withContext(Dispatchers.IO) {
         try {
             val updatesDir = File(context.cacheDir, "updates").apply { mkdirs() }
@@ -90,6 +96,7 @@ object AppUpdateChecker {
             val request = Request.Builder()
                 .url("$url${separator}t=${System.currentTimeMillis()}")
                 .header("Cache-Control", "no-cache")
+                .header("Accept-Encoding", "identity")
                 .build()
 
             downloadClient.newCall(request).execute().use { response ->
@@ -100,7 +107,8 @@ object AppUpdateChecker {
                     ?: return@withContext Result.failure(IllegalStateException("ملف التحديث غير متوفر"))
                 val totalBytes = body.contentLength()
                 var downloaded = 0L
-                var lastReported = -1
+                var lastReportedPct = -1
+                var lastReportTime = 0L
 
                 body.byteStream().use { input ->
                     FileOutputStream(tempFile).use { output ->
@@ -110,18 +118,24 @@ object AppUpdateChecker {
                             if (read == -1) break
                             output.write(buffer, 0, read)
                             downloaded += read
-                            if (totalBytes > 0) {
-                                val pct = ((downloaded * 100L) / totalBytes).toInt().coerceIn(0, 100)
-                                if (pct != lastReported) {
-                                    lastReported = pct
-                                    onProgress(pct)
-                                }
+
+                            val now = System.currentTimeMillis()
+                            val pct = if (totalBytes > 0) {
+                                ((downloaded * 100L) / totalBytes).toInt().coerceIn(0, 100)
+                            } else {
+                                // Smooth fallback estimate (~30 MB) when server omits Content-Length
+                                ((downloaded * 100L) / (30L * 1024L * 1024L)).toInt().coerceIn(1, 95)
+                            }
+                            if (pct != lastReportedPct || (now - lastReportTime) >= 200L) {
+                                lastReportedPct = pct
+                                lastReportTime = now
+                                onProgress(DownloadProgress(pct, downloaded, totalBytes))
                             }
                         }
                         output.flush()
                     }
                 }
-                onProgress(100)
+                onProgress(DownloadProgress(100, downloaded, if (totalBytes > 0) totalBytes else downloaded))
                 if (finalFile.exists()) finalFile.delete()
                 if (!tempFile.renameTo(finalFile)) {
                     tempFile.copyTo(finalFile, overwrite = true)

@@ -88,7 +88,11 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.R
 import com.example.data.CloudRoom
@@ -168,6 +172,18 @@ fun WalkieTalkieScreen(
         onDispose {
             window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         }
+    }
+
+    // Auto-launch APK installer if user returns after granting unknown-sources permission
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                viewModel.onAppResumed()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
     // Hardware Volume Button PTT registration
@@ -594,6 +610,10 @@ fun WalkieTalkieScreen(
             onDismissRequest = {
                 if (!state.isDownloadingUpdate) viewModel.dismissUpdateDialog()
             },
+            properties = DialogProperties(
+                dismissOnBackPress = !state.isDownloadingUpdate,
+                dismissOnClickOutside = !state.isDownloadingUpdate
+            ),
             containerColor = ObsidianSurface,
             icon = {
                 Icon(
@@ -631,13 +651,33 @@ fun WalkieTalkieScreen(
                                 trackColor = GlassWhite.copy(alpha = 0.14f),
                                 modifier = Modifier.fillMaxWidth()
                             )
-                            Text(
-                                text = "جاري تنزيل التحديث داخل التطبيق... ${state.updateDownloadProgress}%",
-                                color = LiquidCyan,
-                                style = MaterialTheme.typography.labelMedium,
-                                fontFamily = JetBrainsMonoFontFamily
-                            )
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text(
+                                    text = "جاري التنزيل داخل التطبيق... ${state.updateDownloadProgress}%",
+                                    color = LiquidCyan,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontFamily = JetBrainsMonoFontFamily
+                                )
+                                if (state.updateDownloadDetail.isNotBlank()) {
+                                    Text(
+                                        text = state.updateDownloadDetail,
+                                        color = TextSecondary,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontFamily = JetBrainsMonoFontFamily
+                                    )
+                                }
+                            }
                         }
+                    } else if (state.downloadedUpdateFilePath != null) {
+                        Text(
+                            text = "اكتمل التنزيل (100%) — جاهز للتثبيت!",
+                            color = LuminousEmerald,
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.Bold
+                        )
                     }
                     state.updateDownloadError?.let { errMsg ->
                         Text(

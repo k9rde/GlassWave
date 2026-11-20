@@ -665,13 +665,33 @@ fun SettingsScreen(
                                 trackColor = GlassWhite.copy(alpha = 0.14f),
                                 modifier = Modifier.fillMaxWidth()
                             )
-                            Text(
-                                text = "جاري تنزيل التحديث... ${state.updateDownloadProgress}%",
-                                color = LiquidCyan,
-                                style = MaterialTheme.typography.labelMedium,
-                                fontFamily = JetBrainsMonoFontFamily
-                            )
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text(
+                                    text = "جاري التنزيل... ${state.updateDownloadProgress}%",
+                                    color = LiquidCyan,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontFamily = JetBrainsMonoFontFamily
+                                )
+                                if (state.updateDownloadDetail.isNotBlank()) {
+                                    Text(
+                                        text = state.updateDownloadDetail,
+                                        color = TextSecondary,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontFamily = JetBrainsMonoFontFamily
+                                    )
+                                }
+                            }
                         }
+                    } else if (state.downloadedUpdateFilePath != null) {
+                        Text(
+                            text = "اكتمل التنزيل (100%) — جاهز للتثبيت!",
+                            color = LuminousEmerald,
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.Bold
+                        )
                     }
                     state.updateDownloadError?.let { errMsg ->
                         Text(

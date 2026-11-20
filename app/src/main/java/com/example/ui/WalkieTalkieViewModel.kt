@@ -59,7 +59,9 @@ data class WalkieTalkieUiState(
     val updateCheckMessage: String? = null,
     val isDownloadingUpdate: Boolean = false,
     val updateDownloadProgress: Int = 0,
+    val updateDownloadDetail: String = "",
     val downloadedUpdateFilePath: String? = null,
+    val pendingInstallAfterPermission: Boolean = false,
     val updateDownloadError: String? = null,
     val lastVoiceSenderName: String = "",
     val canReplayVoice: Boolean = false,
@@ -147,11 +149,14 @@ class WalkieTalkieViewModel(
             }
             AppUpdateChecker.checkForUpdate()
                 .onSuccess { info ->
+                    val previousVersion = localState.value.availableUpdate?.latestVersion
                     localState.update {
+                        val versionChanged = previousVersion != null && previousVersion != info.latestVersion
                         it.copy(
                             isCheckingUpdate = false,
                             availableUpdate = if (info.isUpdateAvailable) info else null,
                             showUpdateDialog = info.isUpdateAvailable,
+                            downloadedUpdateFilePath = if (versionChanged) null else it.downloadedUpdateFilePath,
                             updateDownloadError = null,
                             updateCheckMessage = when {
                                 info.isUpdateAvailable -> "يتوفر تحديث جديد (${info.latestVersion})!"
@@ -191,14 +196,28 @@ class WalkieTalkieViewModel(
                 it.copy(
                     isDownloadingUpdate = true,
                     updateDownloadProgress = 0,
-                    updateDownloadError = null
+                    updateDownloadDetail = "جاري بدء التنزيل…",
+                    updateDownloadError = null,
+                    pendingInstallAfterPermission = false
                 )
             }
             AppUpdateChecker.downloadUpdateApk(
                 context = getApplication(),
                 url = update.downloadUrl,
-                onProgress = { pct ->
-                    localState.update { it.copy(updateDownloadProgress = pct) }
+                onProgress = { progress ->
+                    val downloadedMb = progress.downloadedBytes / (1024f * 1024f)
+                    val detail = if (progress.totalBytes > 0) {
+                        val totalMb = progress.totalBytes / (1024f * 1024f)
+                        String.format("%.1f / %.1f MB", downloadedMb, totalMb)
+                    } else {
+                        String.format("%.1f MB", downloadedMb)
+                    }
+                    localState.update {
+                        it.copy(
+                            updateDownloadProgress = progress.percent,
+                            updateDownloadDetail = detail
+                        )
+                    }
                 }
             )
                 .onSuccess { file ->
@@ -223,17 +242,36 @@ class WalkieTalkieViewModel(
         }
     }
 
+    fun onAppResumed() {
+        val state = localState.value
+        if (state.pendingInstallAfterPermission && state.downloadedUpdateFilePath != null) {
+            val ctx = getApplication<Application>()
+            if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.O ||
+                ctx.packageManager.canRequestPackageInstalls()
+            ) {
+                localState.update { it.copy(pendingInstallAfterPermission = false) }
+                installDownloadedUpdate()
+            }
+        }
+    }
+
     fun installDownloadedUpdate() {
         val path = localState.value.downloadedUpdateFilePath ?: return
         val file = File(path)
         when (AppUpdateChecker.installApk(getApplication(), file)) {
             ApkInstallResult.LAUNCHED_INSTALLER -> {
-                localState.update { it.copy(updateDownloadError = null) }
+                localState.update {
+                    it.copy(
+                        pendingInstallAfterPermission = false,
+                        updateDownloadError = null
+                    )
+                }
             }
             ApkInstallResult.NEEDS_UNKNOWN_SOURCES_PERMISSION -> {
                 localState.update {
                     it.copy(
-                        updateDownloadError = "اسمح بتثبيت التطبيقات من هذا المصدر ثم اضغط «تثبيت التحديث الآن»"
+                        pendingInstallAfterPermission = true,
+                        updateDownloadError = "قم بتفعيل «السماح من هذا المصدر» وسيطلب التثبيت تلقائياً عند الرجوع"
                     )
                 }
             }
@@ -241,6 +279,7 @@ class WalkieTalkieViewModel(
                 localState.update {
                     it.copy(
                         downloadedUpdateFilePath = null,
+                        pendingInstallAfterPermission = false,
                         updateDownloadError = "تعذر فتح المثبّت، يرجى إعادة التنزيل"
                     )
                 }
