@@ -38,7 +38,7 @@ jobs:
           fi
 
       - name: Build Debug APK
-        run: gradle :app:assembleDebug
+        run: gradle :app:assembleDebug -x kspDebugKotlin
 
       - name: Prepare GitHub Pages bundle
         run: |
