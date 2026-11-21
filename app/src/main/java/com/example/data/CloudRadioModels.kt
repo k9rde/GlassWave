@@ -16,6 +16,9 @@ data class CloudRoom(
     val roomPasscode: String = "",
     val memberUids: List<String> = emptyList(),
     val memberNames: Map<String, String> = emptyMap(),
+    val memberStatuses: Map<String, String> = emptyMap(),
+    val memberTxCounts: Map<String, Int> = emptyMap(),
+    val channelLockEnabled: Boolean = false,
     val mutedUids: List<String> = emptyList(),
     val lastPingUid: String = "",
     val lastPingName: String = "",
@@ -33,6 +36,7 @@ data class VoicePacket(
     val senderUid: String = "",
     val senderName: String = "",
     val audioBase64: String = "",
+    val channel: Int = 1,
     val memberUids: List<String> = emptyList(),
     @ServerTimestamp val createdAt: Timestamp? = null
 )

@@ -56,6 +56,7 @@ import com.example.ui.RadioMode
 import com.example.ui.theme.ElectricSapphire
 import com.example.ui.theme.GlassWhite
 import com.example.ui.theme.LiquidCyan
+import com.example.ui.theme.LocalGlassAccent
 import com.example.ui.theme.LuminousEmerald
 import com.example.ui.theme.MintGlow
 import com.example.ui.theme.ObsidianDeep
@@ -88,12 +89,13 @@ fun LiquidAuroraBackground(
         label = "aurora_phase"
     )
 
+    val themePalette = LocalGlassAccent.current
     val primaryGlow by animateColorAsState(
         targetValue = when {
             mode == RadioMode.ALWAYS_OFF -> RubyCrimson.copy(alpha = 0.28f)
             isTransmitting -> LuminousEmerald.copy(alpha = 0.34f)
-            isReceiving -> LiquidCyan.copy(alpha = 0.32f)
-            else -> ElectricSapphire.copy(alpha = 0.26f)
+            isReceiving -> themePalette.primary.copy(alpha = 0.32f)
+            else -> themePalette.secondary.copy(alpha = 0.26f)
         },
         animationSpec = tween(550),
         label = "primary_glow"
@@ -102,8 +104,8 @@ fun LiquidAuroraBackground(
     val secondaryGlow by animateColorAsState(
         targetValue = when {
             mode == RadioMode.ALWAYS_OFF -> RoseGlow.copy(alpha = 0.16f)
-            isTransmitting -> LiquidCyan.copy(alpha = 0.26f)
-            else -> LiquidCyan.copy(alpha = 0.18f)
+            isTransmitting -> themePalette.primary.copy(alpha = 0.26f)
+            else -> themePalette.primary.copy(alpha = 0.18f)
         },
         animationSpec = tween(550),
         label = "secondary_glow"
@@ -288,12 +290,13 @@ fun LiquidGlassPttOrb(
         label = "ptt_ring_pulse"
     )
 
+    val themePalette = LocalGlassAccent.current
     val coreColor by animateColorAsState(
         targetValue = when {
             mode == RadioMode.ALWAYS_OFF -> RubyCrimson
             isTransmitting -> LuminousEmerald
-            isReceiving -> LiquidCyan
-            else -> ElectricSapphire
+            isReceiving -> themePalette.primary
+            else -> themePalette.secondary
         },
         animationSpec = tween(300),
         label = "orb_core_color"
@@ -303,7 +306,7 @@ fun LiquidGlassPttOrb(
         targetValue = when {
             mode == RadioMode.ALWAYS_OFF -> RoseGlow
             isTransmitting -> MintGlow
-            else -> LiquidCyan
+            else -> themePalette.primary
         },
         animationSpec = tween(300),
         label = "orb_secondary_color"

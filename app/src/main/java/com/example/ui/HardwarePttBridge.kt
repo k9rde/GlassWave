@@ -1,8 +1,8 @@
 package com.example.ui
 
 /**
- * Lightweight bridge allowing MainActivity hardware Volume key events
- * to trigger Push-To-Talk when enabled in Settings.
+ * Bridges hardware Volume keys and Floating PTT Overlay Bubble events
+ * directly into the active WalkieTalkieViewModel PTT controls.
  */
 object HardwarePttBridge {
     @Volatile
@@ -13,4 +13,10 @@ object HardwarePttBridge {
 
     @Volatile
     var onVolumeDownRelease: (() -> Unit)? = null
+
+    @Volatile
+    var onFloatingStart: (() -> Unit)? = null
+
+    @Volatile
+    var onFloatingStop: (() -> Unit)? = null
 }

@@ -5,6 +5,8 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.example.audio.AudioOutputRoute
+import com.example.audio.AudioRouteHelper
 import com.example.audio.WalkieTalkieAudioEngine
 import com.example.data.ApkInstallResult
 import com.example.data.AppUpdateChecker
@@ -12,9 +14,11 @@ import com.example.data.AppUpdateInfo
 import java.io.File
 import com.example.data.CloudRadioRepository
 import com.example.data.CloudRoom
+import com.example.data.LocationHelper
 import com.example.data.RoomChatMessage
 import com.example.data.UserSettings
 import com.example.data.UserSettingsStore
+import com.example.service.FloatingPttService
 import com.example.service.RadioForegroundService
 import com.google.firebase.Firebase
 import com.google.firebase.auth.auth
@@ -66,7 +70,9 @@ data class WalkieTalkieUiState(
     val lastVoiceSenderName: String = "",
     val canReplayVoice: Boolean = false,
     val pingBannerMessage: String? = null,
-    val chatMessages: List<RoomChatMessage> = emptyList()
+    val chatMessages: List<RoomChatMessage> = emptyList(),
+    val audioRoute: AudioOutputRoute = AudioOutputRoute.SPEAKER,
+    val autoMuteRemainingSec: Int = 0
 )
 
 class WalkieTalkieViewModel(
@@ -100,6 +106,8 @@ class WalkieTalkieViewModel(
     private var roomDetailJob: Job? = null
     private var packetsJob: Job? = null
     private var chatJob: Job? = null
+    private var autoMuteJob: Job? = null
+    private var txStartedAtMs: Long = 0L
     private val playedPacketIds = LinkedHashSet<String>()
     private var initialPacketsLoaded = false
     private val lastReceivedChunks = ArrayDeque<String>()
@@ -130,9 +138,15 @@ class WalkieTalkieViewModel(
     init {
         audioEngine.rogerBeepStyle = initialSettings.rogerBeepStyle
         audioEngine.radioFxEnabled = initialSettings.radioFxEnabled
+        audioEngine.noiseSuppressionEnabled = initialSettings.noiseSuppressionEnabled
+        audioEngine.squelchEnabled = initialSettings.squelchEnabled
         if (initialMode == RadioMode.ALWAYS_OFF) {
             audioEngine.setMuted(true)
         }
+        if (initialSettings.floatingBubbleEnabled) {
+            FloatingPttService.start(application)
+        }
+        AudioRouteHelper.applyRoute(application, AudioOutputRoute.SPEAKER)
         if (currentUserId.isNotBlank()) {
             observeRooms()
         }
@@ -419,7 +433,8 @@ class WalkieTalkieViewModel(
                                 }
                             }
                             if (packet.senderUid != currentUserId &&
-                                localState.value.mode != RadioMode.ALWAYS_OFF
+                                localState.value.mode != RadioMode.ALWAYS_OFF &&
+                                packet.channel == localState.value.settings.selectedChannel
                             ) {
                                 if (localState.value.lastVoiceSenderName != packet.senderName) {
                                     lastReceivedChunks.clear()
@@ -510,13 +525,87 @@ class WalkieTalkieViewModel(
         }
     }
 
+    fun cycleAudioRoute() {
+        val next = when (localState.value.audioRoute) {
+            AudioOutputRoute.SPEAKER -> AudioOutputRoute.EARPIECE
+            AudioOutputRoute.EARPIECE -> AudioOutputRoute.BLUETOOTH
+            AudioOutputRoute.BLUETOOTH -> AudioOutputRoute.SPEAKER
+        }
+        val applied = AudioRouteHelper.applyRoute(getApplication(), next)
+        if (!applied && next == AudioOutputRoute.BLUETOOTH) {
+            AudioRouteHelper.applyRoute(getApplication(), AudioOutputRoute.SPEAKER)
+            localState.update {
+                it.copy(
+                    audioRoute = AudioOutputRoute.SPEAKER,
+                    errorMessage = "لم يتم العثور على سماعة بلوتوث متصلة — تم التحويل للسماعة الخارجية"
+                )
+            }
+        } else {
+            localState.update { it.copy(audioRoute = next, errorMessage = null) }
+        }
+    }
+
+    fun setSelectedChannel(channel: Int) {
+        val safe = channel.coerceIn(1, 99)
+        lastReceivedChunks.clear()
+        updateSettings { it.copy(selectedChannel = safe) }
+        localState.update { it.copy(canReplayVoice = false) }
+    }
+
+    fun setMemberStatus(status: String) {
+        val clean = status.trim().ifBlank { "متاح" }.take(24)
+        updateSettings { it.copy(memberStatus = clean) }
+        val room = localState.value.activeRoom ?: return
+        viewModelScope.launch {
+            repository.updateMemberStatus(room, clean)
+        }
+    }
+
+    fun toggleChannelLock() {
+        val room = localState.value.activeRoom ?: return
+        if (room.ownerId != currentUserId) return
+        viewModelScope.launch {
+            repository.setChannelLock(room, !room.channelLockEnabled)
+        }
+    }
+
+    fun sendQuickLocation(onResult: (Boolean, String) -> Unit) {
+        val room = localState.value.activeRoom
+        if (room == null) {
+            onResult(false, "انضم إلى غرفة أولاً لإرسال موقعك")
+            return
+        }
+        viewModelScope.launch {
+            val link = LocationHelper.getQuickMapsLink(getApplication())
+            if (link == null) {
+                onResult(false, "تعذر تحديد الموقع الحالي، تأكد من تفعيل GPS")
+            } else {
+                repository.sendChatMessage(
+                    roomId = room.id,
+                    memberUids = room.memberUids,
+                    text = "📍 موقعي الحالي:\n$link",
+                    senderName = localState.value.settings.displayName
+                ).onSuccess {
+                    onResult(true, "تم إرسال موقعك إلى دردشة الغرفة")
+                }.onFailure {
+                    onResult(false, "فشل إرسال الموقع")
+                }
+            }
+        }
+    }
+
+    fun clearErrorMessage() {
+        localState.update { it.copy(errorMessage = null) }
+    }
+
     fun createRoom(roomName: String, passcode: String) {
         viewModelScope.launch {
             localState.update { it.copy(isBusy = true, errorMessage = null) }
             repository.createRoom(
                 roomName = roomName,
                 passcode = passcode,
-                creatorName = localState.value.settings.displayName
+                creatorName = localState.value.settings.displayName,
+                creatorStatus = localState.value.settings.memberStatus
             )
                 .onSuccess { room ->
                     localState.update { it.copy(isBusy = false) }
@@ -539,7 +628,8 @@ class WalkieTalkieViewModel(
             repository.joinRoomByCode(
                 rawCode = code,
                 passcode = passcode,
-                memberName = localState.value.settings.displayName
+                memberName = localState.value.settings.displayName,
+                memberStatus = localState.value.settings.memberStatus
             )
                 .onSuccess { room ->
                     localState.update { it.copy(isBusy = false) }
@@ -603,10 +693,13 @@ class WalkieTalkieViewModel(
 
     fun updateSettings(transform: (UserSettings) -> UserSettings) {
         val previousName = localState.value.settings.displayName
+        val previousBubble = localState.value.settings.floatingBubbleEnabled
         val updated = transform(localState.value.settings)
         settingsStore.save(updated)
         audioEngine.rogerBeepStyle = updated.rogerBeepStyle
         audioEngine.radioFxEnabled = updated.radioFxEnabled
+        audioEngine.noiseSuppressionEnabled = updated.noiseSuppressionEnabled
+        audioEngine.squelchEnabled = updated.squelchEnabled
         localState.update {
             it.copy(
                 settings = updated,
@@ -614,6 +707,10 @@ class WalkieTalkieViewModel(
             )
         }
         syncBackgroundService(localState.value.activeRoom)
+        if (updated.floatingBubbleEnabled != previousBubble) {
+            val ctx = getApplication<Application>()
+            if (updated.floatingBubbleEnabled) FloatingPttService.start(ctx) else FloatingPttService.stop(ctx)
+        }
         if (updated.displayName != previousName) {
             val active = localState.value.activeRoom
             if (active != null) {
@@ -701,10 +798,45 @@ class WalkieTalkieViewModel(
             }
             return
         }
+        if (room.channelLockEnabled &&
+            room.activeSpeakerUid.isNotBlank() &&
+            room.activeSpeakerUid != currentUserId &&
+            room.ownerId != currentUserId
+        ) {
+            val who = room.activeSpeakerName.ifBlank { "عضو" }
+            localState.update {
+                it.copy(
+                    isPttPressed = false,
+                    mode = if (it.mode == RadioMode.ALWAYS_ON) RadioMode.PUSH_TO_TALK else it.mode,
+                    errorMessage = "القناة مقفولة حالياً ($who يتحدث)"
+                )
+            }
+            return
+        }
+
+        txStartedAtMs = System.currentTimeMillis()
         val speakerName = localState.value.settings.displayName
         viewModelScope.launch {
             repository.updateActiveSpeaker(room.id, speaking = true, speakerName = speakerName)
         }
+
+        autoMuteJob?.cancel()
+        val autoLimit = localState.value.settings.autoMuteSeconds
+        if (localState.value.mode == RadioMode.ALWAYS_ON && autoLimit > 0) {
+            autoMuteJob = viewModelScope.launch {
+                for (rem in autoLimit downTo 1) {
+                    localState.update { it.copy(autoMuteRemainingSec = rem) }
+                    delay(1000L)
+                }
+                localState.update { it.copy(autoMuteRemainingSec = 0) }
+                if (localState.value.mode == RadioMode.ALWAYS_ON) {
+                    toggleAlwaysOn()
+                }
+            }
+        } else {
+            localState.update { it.copy(autoMuteRemainingSec = 0) }
+        }
+
         audioEngine.startTransmitting(
             playTone = localState.value.rogerBeepEnabled,
             onChunkEncoded = { audioBase64 ->
@@ -714,7 +846,8 @@ class WalkieTalkieViewModel(
                         roomId = active.id,
                         memberUids = active.memberUids,
                         audioBase64 = audioBase64,
-                        speakerName = localState.value.settings.displayName
+                        speakerName = localState.value.settings.displayName,
+                        channel = localState.value.settings.selectedChannel
                     )
                 }
             }
@@ -722,20 +855,43 @@ class WalkieTalkieViewModel(
     }
 
     private fun stopAllTransmission(playTone: Boolean = false) {
+        autoMuteJob?.cancel()
+        autoMuteJob = null
+        localState.update { it.copy(autoMuteRemainingSec = 0) }
         audioEngine.stopTransmitting(playTone = playTone)
-        val room = localState.value.activeRoom ?: return
-        viewModelScope.launch {
-            repository.updateActiveSpeaker(room.id, speaking = false)
+
+        val room = localState.value.activeRoom
+        if (txStartedAtMs > 0L) {
+            val elapsedSec = ((System.currentTimeMillis() - txStartedAtMs) / 1000L).coerceAtLeast(1L)
+            txStartedAtMs = 0L
+            updateSettings {
+                it.copy(
+                    totalTxSeconds = it.totalTxSeconds + elapsedSec,
+                    totalTxCount = it.totalTxCount + 1
+                )
+            }
+            if (room != null) {
+                viewModelScope.launch {
+                    repository.incrementMemberTxCount(room)
+                }
+            }
+        }
+        if (room != null) {
+            viewModelScope.launch {
+                repository.updateActiveSpeaker(room.id, speaking = false)
+            }
         }
     }
 
     override fun onCleared() {
         super.onCleared()
+        autoMuteJob?.cancel()
         roomsJob?.cancel()
         roomDetailJob?.cancel()
         packetsJob?.cancel()
         chatJob?.cancel()
         RadioForegroundService.stop(getApplication())
+        FloatingPttService.stop(getApplication())
         audioEngine.release()
     }
 

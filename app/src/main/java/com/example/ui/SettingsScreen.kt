@@ -6,6 +6,8 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.BitmapFactory
 import android.net.Uri
+import android.os.Build
+import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -37,6 +39,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.ExitToApp
 import androidx.compose.material.icons.automirrored.rounded.Logout
+import androidx.compose.material.icons.rounded.BubbleChart
 import androidx.compose.material.icons.rounded.CameraAlt
 import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.DeleteForever
@@ -44,12 +47,16 @@ import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.Headset
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.MusicNote
+import androidx.compose.material.icons.rounded.NoiseControlOff
 import androidx.compose.material.icons.rounded.NotificationsActive
 import androidx.compose.material.icons.rounded.Opacity
+import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.PhoneAndroid
 import androidx.compose.material.icons.rounded.Radio
+import androidx.compose.material.icons.rounded.RecordVoiceOver
 import androidx.compose.material.icons.rounded.SystemUpdate
+import androidx.compose.material.icons.rounded.Timer
 import androidx.compose.material.icons.rounded.Vibration
 import androidx.compose.material.icons.rounded.VolumeUp
 import androidx.compose.material3.Button
@@ -93,9 +100,11 @@ import com.example.ui.components.LiquidAuroraBackground
 import com.example.ui.components.LiquidGlassSurface
 import com.example.ui.components.LuxuryGlassIconBadge
 import com.example.ui.theme.ElectricSapphire
+import com.example.ui.theme.GlassThemeOption
 import com.example.ui.theme.GlassWhite
 import com.example.ui.theme.JetBrainsMonoFontFamily
 import com.example.ui.theme.LiquidCyan
+import com.example.ui.theme.LocalGlassAccent
 import com.example.ui.theme.LuminousEmerald
 import com.example.ui.theme.ObsidianDeep
 import com.example.ui.theme.RubyCrimson
@@ -291,8 +300,66 @@ fun SettingsScreen(
                 }
             }
 
-            // 2. Icon Glass Opacity & Visuals
-            SettingsSectionCard(title = "مظهر الأيقونات الزجاجية", accentColor = ElectricSapphire) {
+            // 2. Icon Glass Opacity & Theme Colors (#6)
+            SettingsSectionCard(title = "مظهر الزجاج والألوان", accentColor = LocalGlassAccent.current.secondary) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Palette,
+                        contentDescription = null,
+                        tint = LocalGlassAccent.current.primary,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Text("ثيم الزجاج السائل", color = TextPrimary, style = MaterialTheme.typography.titleMedium)
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    GlassThemeOption.entries.forEach { option ->
+                        val selected = state.settings.glassTheme == option.key
+                        Column(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(14.dp))
+                                .background(
+                                    if (selected) option.primary.copy(alpha = 0.22f)
+                                    else GlassWhite.copy(alpha = 0.06f)
+                                )
+                                .border(
+                                    width = if (selected) 1.5.dp else 1.dp,
+                                    color = if (selected) option.primary else GlassWhite.copy(alpha = 0.16f),
+                                    shape = RoundedCornerShape(14.dp)
+                                )
+                                .clickable {
+                                    viewModel.updateSettings { it.copy(glassTheme = option.key) }
+                                }
+                                .padding(vertical = 8.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(22.dp)
+                                    .clip(CircleShape)
+                                    .background(Brush.linearGradient(listOf(option.primary, option.secondary)))
+                                    .border(1.dp, GlassWhite.copy(alpha = 0.7f), CircleShape)
+                            )
+                            Text(
+                                text = option.labelAr,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = if (selected) GlassWhite else TextSecondary,
+                                fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+                                maxLines = 1
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(4.dp))
+
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -411,6 +478,16 @@ fun SettingsScreen(
                                 Text("حفظ", fontWeight = FontWeight.Bold)
                             }
                         }
+
+                        SettingsToggleRow(
+                            icon = Icons.Rounded.RecordVoiceOver,
+                            title = "أولوية المتحدث (قفل القناة)",
+                            subtitle = "منع مقاطعة المتحدث الحالي أثناء الإرسال",
+                            checked = room.channelLockEnabled,
+                            onCheckedChange = { _ ->
+                                viewModel.toggleChannelLock()
+                            }
+                        )
                     }
 
                     Spacer(modifier = Modifier.height(6.dp))
@@ -548,6 +625,70 @@ fun SettingsScreen(
                         viewModel.updateSettings { it.copy(radioFxEnabled = checked) }
                     }
                 )
+                SettingsToggleRow(
+                    icon = Icons.Rounded.NoiseControlOff,
+                    title = "عزل الضوضاء الذكي",
+                    subtitle = "تنقية صوت الميكروفون وإزالة الصدى وضجيج الهواء",
+                    checked = state.settings.noiseSuppressionEnabled,
+                    onCheckedChange = { checked ->
+                        viewModel.updateSettings { it.copy(noiseSuppressionEnabled = checked) }
+                    }
+                )
+                SettingsToggleRow(
+                    icon = Icons.Rounded.GraphicEq,
+                    title = "تشويش الراديو الواقعي (Squelch)",
+                    subtitle = "نبرة تشويش خفيفة عند بدء وإنهاء البث",
+                    checked = state.settings.squelchEnabled,
+                    onCheckedChange = { checked ->
+                        viewModel.updateSettings { it.copy(squelchEnabled = checked) }
+                    }
+                )
+                SettingsToggleRow(
+                    icon = Icons.Rounded.BubbleChart,
+                    title = "فقاعة التحدث العائمة فوق التطبيقات",
+                    subtitle = "زر عائم للتحدث السريع أثناء فتح تطبيقات أخرى",
+                    checked = state.settings.floatingBubbleEnabled,
+                    onCheckedChange = { checked ->
+                        if (checked && Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(context)) {
+                            val intent = Intent(
+                                Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                Uri.parse("package:${context.packageName}")
+                            )
+                            runCatching { context.startActivity(intent) }
+                            Toast.makeText(context, "اسمح بالظهور فوق التطبيقات ثم أعد تفعيل الخيار", Toast.LENGTH_LONG).show()
+                        } else {
+                            viewModel.updateSettings { it.copy(floatingBubbleEnabled = checked) }
+                        }
+                    }
+                )
+
+                // Auto-Mute Timer Selector (#14)
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(Icons.Rounded.Timer, contentDescription = null, tint = LiquidCyan, modifier = Modifier.size(18.dp))
+                    Text("مؤقت الإيقاف التلقائي للبث المستمر", color = TextPrimary, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    listOf(0 to "معطّل", 30 to "30ث", 60 to "60ث", 120 to "120ث").forEach { (secs, label) ->
+                        val selected = state.settings.autoMuteSeconds == secs
+                        Button(
+                            onClick = { viewModel.updateSettings { it.copy(autoMuteSeconds = secs) } },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (selected) LiquidCyan else GlassWhite.copy(alpha = 0.08f),
+                                contentColor = if (selected) ObsidianDeep else TextPrimary
+                            ),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text(label, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelSmall, maxLines = 1)
+                        }
+                    }
+                }
 
                 // Roger Beep Style Selector
                 Row(

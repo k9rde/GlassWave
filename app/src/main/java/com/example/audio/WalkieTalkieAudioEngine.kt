@@ -6,6 +6,9 @@ import android.media.AudioFormat
 import android.media.AudioRecord
 import android.media.AudioTrack
 import android.media.MediaRecorder
+import android.media.audiofx.AcousticEchoCanceler
+import android.media.audiofx.AutomaticGainControl
+import android.media.audiofx.NoiseSuppressor
 import android.util.Base64
 import android.util.Log
 import kotlinx.coroutines.CoroutineScope
@@ -23,6 +26,7 @@ import kotlin.math.PI
 import kotlin.math.min
 import kotlin.math.sin
 import kotlin.math.sqrt
+import kotlin.random.Random
 
 /**
  * Real-time Cloud Walkie-Talkie Audio Engine.
@@ -53,6 +57,12 @@ class WalkieTalkieAudioEngine {
     @Volatile
     var radioFxEnabled: Boolean = false
 
+    @Volatile
+    var noiseSuppressionEnabled: Boolean = true
+
+    @Volatile
+    var squelchEnabled: Boolean = true
+
     fun setMuted(muted: Boolean) {
         isMutedCompletely = muted
         if (muted) {
@@ -69,12 +79,18 @@ class WalkieTalkieAudioEngine {
         if (isMutedCompletely) return
         if (recordJob?.isActive == true) return
 
+        if (squelchEnabled) {
+            playSquelchBurst()
+        }
         if (playTone) {
             playChirp(start = true)
         }
 
         recordJob = scope.launch {
             var recorder: AudioRecord? = null
+            var noiseSuppressor: NoiseSuppressor? = null
+            var echoCanceler: AcousticEchoCanceler? = null
+            var autoGain: AutomaticGainControl? = null
             try {
                 val minBuf = AudioRecord.getMinBufferSize(
                     SAMPLE_RATE,
@@ -93,6 +109,25 @@ class WalkieTalkieAudioEngine {
                 if (recorder.state != AudioRecord.STATE_INITIALIZED) {
                     Log.w(TAG, "AudioRecord failed to initialize")
                     return@launch
+                }
+
+                if (noiseSuppressionEnabled) {
+                    val sessionId = recorder.audioSessionId
+                    runCatching {
+                        if (NoiseSuppressor.isAvailable()) {
+                            noiseSuppressor = NoiseSuppressor.create(sessionId)?.apply { enabled = true }
+                        }
+                    }
+                    runCatching {
+                        if (AcousticEchoCanceler.isAvailable()) {
+                            echoCanceler = AcousticEchoCanceler.create(sessionId)?.apply { enabled = true }
+                        }
+                    }
+                    runCatching {
+                        if (AutomaticGainControl.isAvailable()) {
+                            autoGain = AutomaticGainControl.create(sessionId)?.apply { enabled = true }
+                        }
+                    }
                 }
 
                 recorder.startRecording()
@@ -127,6 +162,9 @@ class WalkieTalkieAudioEngine {
                 Log.w(TAG, "Cloud transmission loop ended: ${e.message}")
             } finally {
                 _micLevel.value = 0f
+                runCatching { noiseSuppressor?.release() }
+                runCatching { echoCanceler?.release() }
+                runCatching { autoGain?.release() }
                 try {
                     recorder?.stop()
                     recorder?.release()
@@ -140,8 +178,13 @@ class WalkieTalkieAudioEngine {
         recordJob?.cancel()
         recordJob = null
         _micLevel.value = 0f
-        if (wasActive && playTone && !isMutedCompletely) {
-            playChirp(start = false)
+        if (wasActive && !isMutedCompletely) {
+            if (squelchEnabled) {
+                playSquelchBurst()
+            }
+            if (playTone) {
+                playChirp(start = false)
+            }
         }
     }
 
@@ -208,6 +251,27 @@ class WalkieTalkieAudioEngine {
         } catch (e: Exception) {
             Log.w(TAG, "Unable to create AudioTrack: ${e.message}")
             null
+        }
+    }
+
+    fun playSquelchBurst() {
+        if (isMutedCompletely) return
+        scope.launch {
+            try {
+                val durationMs = 55
+                val sampleCount = (SAMPLE_RATE * durationMs) / 1000
+                val pcm = ShortArray(sampleCount)
+                var prev = 0
+                for (i in 0 until sampleCount) {
+                    val progress = i.toDouble() / sampleCount
+                    val envelope = sin(PI * progress)
+                    val white = Random.nextInt(-3600, 3600)
+                    val filtered = (white - (prev * 0.4f).toInt())
+                    prev = white
+                    pcm[i] = (filtered * envelope).toInt().coerceIn(-6000, 6000).toShort()
+                }
+                playStaticTone(pcm, durationMs)
+            } catch (_: Exception) {}
         }
     }
 

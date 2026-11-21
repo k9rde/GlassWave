@@ -127,7 +127,8 @@ class CloudRadioRepository(private val db: FirebaseFirestore) {
     suspend fun createRoom(
         roomName: String,
         passcode: String,
-        creatorName: String? = null
+        creatorName: String? = null,
+        creatorStatus: String = "متاح"
     ): Result<CloudRoom> {
         val code = generateRoomCode()
         val path = "rooms/$code"
@@ -140,6 +141,7 @@ class CloudRadioRepository(private val db: FirebaseFirestore) {
             val cleanName = roomName.trim().ifBlank { "غرفة الأصدقاء" }.take(60)
             val displayName = creatorName?.trim()?.take(40)?.ifBlank { currentDisplayName() } ?: currentDisplayName()
             val memberNames = mapOf(uid to displayName)
+            val memberStatuses = mapOf(uid to creatorStatus.ifBlank { "متاح" }.take(24))
             val payload = mapOf(
                 "ownerId" to uid,
                 "roomCode" to code,
@@ -147,6 +149,9 @@ class CloudRadioRepository(private val db: FirebaseFirestore) {
                 "roomPasscode" to cleanPasscode,
                 "memberUids" to listOf(uid),
                 "memberNames" to memberNames,
+                "memberStatuses" to memberStatuses,
+                "memberTxCounts" to mapOf(uid to 0),
+                "channelLockEnabled" to false,
                 "activeSpeakerUid" to "",
                 "activeSpeakerName" to "",
                 "createdAt" to FieldValue.serverTimestamp(),
@@ -161,7 +166,10 @@ class CloudRadioRepository(private val db: FirebaseFirestore) {
                     roomName = cleanName,
                     roomPasscode = cleanPasscode,
                     memberUids = listOf(uid),
-                    memberNames = memberNames
+                    memberNames = memberNames,
+                    memberStatuses = memberStatuses,
+                    memberTxCounts = mapOf(uid to 0),
+                    channelLockEnabled = false
                 )
             )
         } catch (e: CancellationException) {
@@ -175,7 +183,8 @@ class CloudRadioRepository(private val db: FirebaseFirestore) {
     suspend fun joinRoomByCode(
         rawCode: String,
         passcode: String,
-        memberName: String? = null
+        memberName: String? = null,
+        memberStatus: String = "متاح"
     ): Result<CloudRoom> {
         val code = rawCode.trim().uppercase().filter { it.isLetterOrDigit() }
         if (code.length < 4 || code.length > 12) {
@@ -200,6 +209,7 @@ class CloudRadioRepository(private val db: FirebaseFirestore) {
 
             val displayName = memberName?.trim()?.take(40)?.ifBlank { currentDisplayName() } ?: currentDisplayName()
             val updatedNames = room.memberNames + (uid to displayName)
+            val updatedStatuses = room.memberStatuses + (uid to memberStatus.ifBlank { "متاح" }.take(24))
             if (uid !in room.memberUids) {
                 if (room.memberUids.size >= 25) {
                     return Result.failure(IllegalStateException("الغرفة ممتلئة"))
@@ -209,18 +219,20 @@ class CloudRadioRepository(private val db: FirebaseFirestore) {
                     mapOf(
                         "memberUids" to updatedMembers,
                         "memberNames" to updatedNames,
+                        "memberStatuses" to updatedStatuses,
                         "updatedAt" to FieldValue.serverTimestamp()
                     )
                 ).await()
-                Result.success(room.copy(memberUids = updatedMembers, memberNames = updatedNames))
+                Result.success(room.copy(memberUids = updatedMembers, memberNames = updatedNames, memberStatuses = updatedStatuses))
             } else {
                 docRef.update(
                     mapOf(
                         "memberNames" to updatedNames,
+                        "memberStatuses" to updatedStatuses,
                         "updatedAt" to FieldValue.serverTimestamp()
                     )
                 ).await()
-                Result.success(room.copy(memberNames = updatedNames))
+                Result.success(room.copy(memberNames = updatedNames, memberStatuses = updatedStatuses))
             }
         } catch (e: CancellationException) {
             throw e
@@ -319,7 +331,8 @@ class CloudRadioRepository(private val db: FirebaseFirestore) {
         roomId: String,
         memberUids: List<String>,
         audioBase64: String,
-        speakerName: String? = null
+        speakerName: String? = null,
+        channel: Int = 1
     ): Result<Unit> {
         val docRef = db.collection("rooms").document(roomId).collection("packets").document()
         val path = docRef.path
@@ -334,6 +347,7 @@ class CloudRadioRepository(private val db: FirebaseFirestore) {
                 "senderUid" to uid,
                 "senderName" to name,
                 "audioBase64" to audioBase64,
+                "channel" to channel.coerceIn(1, 99),
                 "memberUids" to safeMembers,
                 "createdAt" to FieldValue.serverTimestamp()
             )
@@ -343,6 +357,70 @@ class CloudRadioRepository(private val db: FirebaseFirestore) {
             throw e
         } catch (e: Exception) {
             handleFirestoreError(e, OperationType.CREATE, path)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun updateMemberStatus(room: CloudRoom, status: String): Result<Unit> {
+        val path = "rooms/${room.id}"
+        return try {
+            val uid = requireUserId()
+            val clean = status.trim().ifBlank { "متاح" }.take(24)
+            val updated = room.memberStatuses + (uid to clean)
+            db.collection("rooms").document(room.id).update(
+                mapOf(
+                    "memberStatuses" to updated,
+                    "updatedAt" to FieldValue.serverTimestamp()
+                )
+            ).await()
+            Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.UPDATE, path)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun incrementMemberTxCount(room: CloudRoom): Result<Unit> {
+        val path = "rooms/${room.id}"
+        return try {
+            val uid = requireUserId()
+            val current = room.memberTxCounts[uid] ?: 0
+            val updated = room.memberTxCounts + (uid to (current + 1))
+            db.collection("rooms").document(room.id).update(
+                mapOf(
+                    "memberTxCounts" to updated,
+                    "updatedAt" to FieldValue.serverTimestamp()
+                )
+            ).await()
+            Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.UPDATE, path)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun setChannelLock(room: CloudRoom, enabled: Boolean): Result<Unit> {
+        val path = "rooms/${room.id}"
+        return try {
+            val uid = requireUserId()
+            if (room.ownerId != uid) {
+                return Result.failure(IllegalArgumentException("فقط مالك الغرفة يمكنه تغيير قفل القناة"))
+            }
+            db.collection("rooms").document(room.id).update(
+                mapOf(
+                    "channelLockEnabled" to enabled,
+                    "updatedAt" to FieldValue.serverTimestamp()
+                )
+            ).await()
+            Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.UPDATE, path)
             Result.failure(e)
         }
     }

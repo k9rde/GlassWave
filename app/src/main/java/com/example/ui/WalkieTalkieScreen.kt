@@ -18,6 +18,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -31,6 +32,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.lazy.LazyColumn
@@ -39,20 +41,28 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Logout
 import androidx.compose.material.icons.automirrored.rounded.Send
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.BarChart
+import androidx.compose.material.icons.rounded.BluetoothAudio
 import androidx.compose.material.icons.rounded.Bolt
 import androidx.compose.material.icons.rounded.Campaign
 import androidx.compose.material.icons.rounded.Chat
 import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.GroupAdd
+import androidx.compose.material.icons.rounded.LocationOn
+import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.NotificationsActive
 import androidx.compose.material.icons.rounded.NotificationsOff
 import androidx.compose.material.icons.rounded.PersonRemove
+import androidx.compose.material.icons.rounded.PhoneInTalk
 import androidx.compose.material.icons.rounded.Podcasts
 import androidx.compose.material.icons.rounded.PowerSettingsNew
 import androidx.compose.material.icons.rounded.Public
+import androidx.compose.material.icons.rounded.QrCode2
+import androidx.compose.material.icons.rounded.QrCodeScanner
 import androidx.compose.material.icons.rounded.Radio
 import androidx.compose.material.icons.rounded.Replay
 import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.SettingsInputAntenna
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.SystemUpdate
 import androidx.compose.material.icons.rounded.VolumeOff
@@ -64,10 +74,12 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -87,6 +99,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.ContextCompat
@@ -95,16 +108,24 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.R
+import com.example.audio.AudioOutputRoute
 import com.example.data.CloudRoom
+import com.example.ui.components.ActivityStatsDialog
+import com.example.ui.components.ChannelPickerDialog
 import com.example.ui.components.GlassModeControlButton
 import com.example.ui.components.LiquidAuroraBackground
 import com.example.ui.components.LiquidGlassPttOrb
 import com.example.ui.components.LiquidGlassSurface
 import com.example.ui.components.LuxuryGlassIconBadge
+import com.example.ui.components.MemberStatusDialog
+import com.example.ui.components.QrScannerDialog
+import com.example.ui.components.RoomQrShareDialog
 import com.example.ui.theme.ElectricSapphire
+import com.example.ui.theme.GlassThemeOption
 import com.example.ui.theme.GlassWhite
 import com.example.ui.theme.JetBrainsMonoFontFamily
 import com.example.ui.theme.LiquidCyan
+import com.example.ui.theme.LocalGlassAccent
 import com.example.ui.theme.LuminousEmerald
 import com.example.ui.theme.ObsidianDeep
 import com.example.ui.theme.ObsidianSurface
@@ -126,7 +147,18 @@ fun WalkieTalkieScreen(
     var showSettings by remember { mutableStateOf(false) }
     var showMembersDialog by remember { mutableStateOf(false) }
     var showChatDialog by remember { mutableStateOf(false) }
+    var showChannelDialog by remember { mutableStateOf(false) }
+    var showStatusDialog by remember { mutableStateOf(false) }
+    var showStatsDialog by remember { mutableStateOf(false) }
+    var showQrShareDialog by remember { mutableStateOf(false) }
+    var showQrScannerDialog by remember { mutableStateOf(false) }
+    var joinRoomCodeInput by remember { mutableStateOf("") }
+    var joinPasscodeInput by remember { mutableStateOf("") }
     var txSeconds by remember { mutableIntStateOf(0) }
+
+    val glassTheme = remember(state.settings.glassTheme) {
+        GlassThemeOption.fromKey(state.settings.glassTheme)
+    }
 
     val requiredPermissions = remember {
         buildList {
@@ -143,6 +175,30 @@ fun WalkieTalkieScreen(
         val micGranted = results[Manifest.permission.RECORD_AUDIO]
             ?: (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED)
         viewModel.onMicPermissionChanged(micGranted)
+    }
+
+    val locationPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions()
+    ) { results ->
+        val granted = results[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
+            results[Manifest.permission.ACCESS_COARSE_LOCATION] == true
+        if (granted) {
+            viewModel.sendQuickLocation { _, msg ->
+                Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+            }
+        } else {
+            Toast.makeText(context, "يلزم إذن الموقع لإرسال إحداثياتك للأصدقاء", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    val bluetoothPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) {
+            viewModel.cycleAudioRoute()
+        } else {
+            Toast.makeText(context, "يرجى منح إذن البلوتوث للتبديل إلى سماعة البلوتوث", Toast.LENGTH_SHORT).show()
+        }
     }
 
     // Automatically request all required permissions on first entry
@@ -186,17 +242,21 @@ fun WalkieTalkieScreen(
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    // Hardware Volume Button PTT registration
+    // Hardware Volume Button & Floating Bubble PTT registration
     DisposableEffect(state.settings.volumeKeyPttEnabled, state.mode, state.activeRoom != null) {
         HardwarePttBridge.isEnabled = state.settings.volumeKeyPttEnabled &&
             state.mode == RadioMode.PUSH_TO_TALK &&
             state.activeRoom != null
         HardwarePttBridge.onVolumeDownPress = { viewModel.onPttPressStart() }
         HardwarePttBridge.onVolumeDownRelease = { viewModel.onPttPressEnd() }
+        HardwarePttBridge.onFloatingStart = { viewModel.onPttPressStart() }
+        HardwarePttBridge.onFloatingStop = { viewModel.onPttPressEnd() }
         onDispose {
             HardwarePttBridge.isEnabled = false
             HardwarePttBridge.onVolumeDownPress = null
             HardwarePttBridge.onVolumeDownRelease = null
+            HardwarePttBridge.onFloatingStart = null
+            HardwarePttBridge.onFloatingStop = null
         }
     }
 
@@ -213,150 +273,162 @@ fun WalkieTalkieScreen(
         }
     }
 
-    if (showSettings) {
-        SettingsScreen(
-            state = state,
-            viewModel = viewModel,
-            onBack = { showSettings = false },
-            onSignOutClick = onSignOutClick
-        )
-        return
-    }
+    CompositionLocalProvider(LocalGlassAccent provides glassTheme) {
+        if (showSettings) {
+            SettingsScreen(
+                state = state,
+                viewModel = viewModel,
+                onBack = { showSettings = false },
+                onSignOutClick = onSignOutClick
+            )
+            return@CompositionLocalProvider
+        }
 
-    Box(modifier = Modifier.fillMaxSize()) {
-        LiquidAuroraBackground(
-            mode = state.mode,
-            isTransmitting = state.isTransmitting,
-            isReceiving = state.isReceiving
-        )
-
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .statusBarsPadding()
-                .navigationBarsPadding()
-                .padding(horizontal = 20.dp, vertical = 14.dp)
-                .widthIn(max = 560.dp)
-                .align(Alignment.Center),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.SpaceBetween
-        ) {
-            // Top Glass Header Bar
-            TopGlassHeader(
-                refreshRateHz = state.refreshRateHz,
-                rogerBeepEnabled = state.rogerBeepEnabled,
-                iconOpacity = state.settings.glassOpacity,
-                onToggleRogerBeep = {
-                    if (state.settings.hapticEnabled) {
-                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                    }
-                    viewModel.toggleRogerBeep()
-                },
-                onOpenSettings = { showSettings = true }
+        Box(modifier = Modifier.fillMaxSize()) {
+            LiquidAuroraBackground(
+                mode = state.mode,
+                isTransmitting = state.isTransmitting,
+                isReceiving = state.isReceiving
             )
 
-            // Cloud Room Card (Works across any house / any network!)
-            CloudRoomGlassCard(
-                activeRoom = state.activeRoom,
-                onCreateRoomClick = { showCreateDialog = true },
-                onJoinRoomClick = { showJoinDialog = true },
-                onCopyCode = { code ->
-                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
-                    clipboard?.setPrimaryClip(ClipData.newPlainText("GlassWave Room", code))
-                    Toast.makeText(context, "تم نسخ رمز الغرفة: $code", Toast.LENGTH_SHORT).show()
-                },
-                onShareRoom = { room ->
-                    val shareText = "انضم معي في غرفة اللاسلكي (${room.roomName}) على تطبيق GlassWave!\nرمز الغرفة: ${room.roomCode}\nرابط تحميل التطبيق: https://k9rde.github.io/GlassWave/"
-                    val intent = Intent(Intent.ACTION_SEND).apply {
-                        type = "text/plain"
-                        putExtra(Intent.EXTRA_TEXT, shareText)
-                    }
-                    context.startActivity(Intent.createChooser(intent, "مشاركة دعوة الغرفة"))
-                },
-                onShowMembers = { showMembersDialog = true }
-            )
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .statusBarsPadding()
+                    .navigationBarsPadding()
+                    .padding(horizontal = 20.dp, vertical = 14.dp)
+                    .widthIn(max = 560.dp)
+                    .align(Alignment.Center),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.SpaceBetween
+            ) {
+                // Top Glass Header Bar
+                TopGlassHeader(
+                    refreshRateHz = state.refreshRateHz,
+                    rogerBeepEnabled = state.rogerBeepEnabled,
+                    audioRoute = state.audioRoute,
+                    iconOpacity = state.settings.glassOpacity,
+                    onCycleAudioRoute = {
+                        val nextIsBt = state.audioRoute == AudioOutputRoute.EARPIECE
+                        if (nextIsBt && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+                            ContextCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED
+                        ) {
+                            bluetoothPermissionLauncher.launch(Manifest.permission.BLUETOOTH_CONNECT)
+                        } else {
+                            viewModel.cycleAudioRoute()
+                        }
+                    },
+                    onToggleRogerBeep = {
+                        if (state.settings.hapticEnabled) {
+                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        }
+                        viewModel.toggleRogerBeep()
+                    },
+                    onOpenSettings = { showSettings = true }
+                )
 
-            // Quick Actions Row (Ping, Replay Last Voice, Room Chat)
+                // Cloud Room Card (Works across any house / any network!)
+                CloudRoomGlassCard(
+                    activeRoom = state.activeRoom,
+                    selectedChannel = state.settings.selectedChannel,
+                    memberStatus = state.settings.memberStatus,
+                    onCreateRoomClick = { showCreateDialog = true },
+                    onJoinRoomClick = {
+                        joinRoomCodeInput = ""
+                        joinPasscodeInput = ""
+                        showJoinDialog = true
+                    },
+                    onCopyCode = { code ->
+                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+                        clipboard?.setPrimaryClip(ClipData.newPlainText("GlassWave Room", code))
+                        Toast.makeText(context, "تم نسخ رمز الغرفة: $code", Toast.LENGTH_SHORT).show()
+                    },
+                    onShareRoom = { room ->
+                        val shareText = "انضم معي في غرفة اللاسلكي (${room.roomName}) على تطبيق GlassWave!\nرمز الغرفة: ${room.roomCode}\nرابط تحميل التطبيق: https://k9rde.github.io/GlassWave/"
+                        val intent = Intent(Intent.ACTION_SEND).apply {
+                            type = "text/plain"
+                            putExtra(Intent.EXTRA_TEXT, shareText)
+                        }
+                        context.startActivity(Intent.createChooser(intent, "مشاركة دعوة الغرفة"))
+                    },
+                    onShowQrShare = { showQrShareDialog = true },
+                    onPickChannel = { showChannelDialog = true },
+                    onPickStatus = { showStatusDialog = true },
+                    onShowMembers = { showMembersDialog = true }
+                )
+
+            // Quick Actions Row (Ping, Replay, Chat, Location, Stats)
             if (state.activeRoom != null) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    LiquidGlassSurface(
-                        modifier = Modifier
-                            .weight(1f)
-                            .testTag("ping_room_button")
-                            .clickable {
-                                viewModel.sendPing()
-                                Toast.makeText(context, "تم إرسال نداء عاجل للغرفة", Toast.LENGTH_SHORT).show()
-                            },
-                        shape = RoundedCornerShape(16.dp),
+                    QuickActionGlassChip(
+                        icon = Icons.Rounded.Campaign,
+                        label = "نداء",
                         accentColor = RubyCrimson,
-                        tintAlpha = 0.14f,
-                        borderAlpha = 0.35f
+                        testTag = "ping_room_button",
+                        modifier = Modifier.weight(1f)
                     ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 9.dp),
-                            horizontalArrangement = Arrangement.Center,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(Icons.Rounded.Campaign, contentDescription = null, tint = RubyCrimson, modifier = Modifier.size(18.dp))
-                            Spacer(modifier = Modifier.size(5.dp))
-                            Text("نداء", style = MaterialTheme.typography.labelMedium, color = GlassWhite, fontWeight = FontWeight.Bold)
-                        }
+                        viewModel.sendPing()
+                        Toast.makeText(context, "تم إرسال نداء عاجل للغرفة", Toast.LENGTH_SHORT).show()
                     }
 
-                    LiquidGlassSurface(
-                        modifier = Modifier
-                            .weight(1f)
-                            .alpha(if (state.canReplayVoice) 1f else 0.45f)
-                            .testTag("replay_voice_button")
-                            .clickable(enabled = state.canReplayVoice) {
-                                viewModel.replayLastVoiceMessage()
-                                Toast.makeText(context, "إعادة صوت: ${state.lastVoiceSenderName}", Toast.LENGTH_SHORT).show()
-                            },
-                        shape = RoundedCornerShape(16.dp),
+                    QuickActionGlassChip(
+                        icon = Icons.Rounded.Replay,
+                        label = "إعادة",
                         accentColor = LiquidCyan,
-                        tintAlpha = 0.14f,
-                        borderAlpha = 0.35f
+                        enabled = state.canReplayVoice,
+                        testTag = "replay_voice_button",
+                        modifier = Modifier.weight(1f)
                     ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 9.dp),
-                            horizontalArrangement = Arrangement.Center,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(Icons.Rounded.Replay, contentDescription = null, tint = LiquidCyan, modifier = Modifier.size(18.dp))
-                            Spacer(modifier = Modifier.size(5.dp))
-                            Text("إعادة", style = MaterialTheme.typography.labelMedium, color = GlassWhite, fontWeight = FontWeight.Bold)
+                        viewModel.replayLastVoiceMessage()
+                        Toast.makeText(context, "إعادة صوت: ${state.lastVoiceSenderName}", Toast.LENGTH_SHORT).show()
+                    }
+
+                    val chatLabel = if (state.chatMessages.isNotEmpty()) "دردشة(${state.chatMessages.size})" else "دردشة"
+                    QuickActionGlassChip(
+                        icon = Icons.Rounded.Chat,
+                        label = chatLabel,
+                        accentColor = LuminousEmerald,
+                        testTag = "open_chat_button",
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        showChatDialog = true
+                    }
+
+                    QuickActionGlassChip(
+                        icon = Icons.Rounded.LocationOn,
+                        label = "موقعي",
+                        accentColor = glassTheme.primary,
+                        testTag = "share_location_button",
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        val hasLoc = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
+                            ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+                        if (hasLoc) {
+                            Toast.makeText(context, "جاري تحديد موقعك…", Toast.LENGTH_SHORT).show()
+                            viewModel.sendQuickLocation { _, msg ->
+                                Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                            }
+                        } else {
+                            locationPermissionLauncher.launch(
+                                arrayOf(
+                                    Manifest.permission.ACCESS_FINE_LOCATION,
+                                    Manifest.permission.ACCESS_COARSE_LOCATION
+                                )
+                            )
                         }
                     }
 
-                    LiquidGlassSurface(
-                        modifier = Modifier
-                            .weight(1f)
-                            .testTag("open_chat_button")
-                            .clickable { showChatDialog = true },
-                        shape = RoundedCornerShape(16.dp),
-                        accentColor = LuminousEmerald,
-                        tintAlpha = 0.14f,
-                        borderAlpha = 0.35f
+                    QuickActionGlassChip(
+                        icon = Icons.Rounded.BarChart,
+                        label = "إحصاء",
+                        accentColor = ElectricSapphire,
+                        testTag = "open_stats_button",
+                        modifier = Modifier.weight(1f)
                     ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 9.dp),
-                            horizontalArrangement = Arrangement.Center,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(Icons.Rounded.Chat, contentDescription = null, tint = LuminousEmerald, modifier = Modifier.size(18.dp))
-                            Spacer(modifier = Modifier.size(5.dp))
-                            val chatLabel = if (state.chatMessages.isNotEmpty()) "دردشة (${state.chatMessages.size})" else "دردشة"
-                            Text(chatLabel, style = MaterialTheme.typography.labelMedium, color = GlassWhite, fontWeight = FontWeight.Bold)
-                        }
+                        showStatsDialog = true
                     }
                 }
             }
@@ -557,8 +629,6 @@ fun WalkieTalkieScreen(
     }
 
     if (showJoinDialog) {
-        var roomCode by remember { mutableStateOf("") }
-        var passcode by remember { mutableStateOf("") }
         AlertDialog(
             onDismissRequest = { showJoinDialog = false },
             containerColor = ObsidianSurface,
@@ -566,28 +636,37 @@ fun WalkieTalkieScreen(
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     OutlinedTextField(
-                        value = roomCode,
-                        onValueChange = { roomCode = it.uppercase().take(12) },
+                        value = joinRoomCodeInput,
+                        onValueChange = { joinRoomCodeInput = it.uppercase().take(12) },
                         label = { Text("رمز الغرفة (مثال: WAVE42)") },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
                     OutlinedTextField(
-                        value = passcode,
-                        onValueChange = { passcode = it.take(24) },
+                        value = joinPasscodeInput,
+                        onValueChange = { joinPasscodeInput = it.take(24) },
                         label = { Text("رمز دخول الغرفة (كلمة المرور)") },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
+                    OutlinedButton(
+                        onClick = { showQrScannerDialog = true },
+                        shape = RoundedCornerShape(14.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Rounded.QrCodeScanner, contentDescription = null, tint = glassTheme.primary, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.size(6.dp))
+                        Text("مسح رمز QR بالكاميرا", color = glassTheme.primary, fontWeight = FontWeight.Bold)
+                    }
                 }
             },
             confirmButton = {
                 Button(
                     onClick = {
-                        viewModel.joinRoomByCode(roomCode, passcode)
+                        viewModel.joinRoomByCode(joinRoomCodeInput, joinPasscodeInput)
                         showJoinDialog = false
                     },
-                    enabled = roomCode.trim().length >= 4,
+                    enabled = joinRoomCodeInput.trim().length >= 4,
                     colors = ButtonDefaults.buttonColors(
                         containerColor = LuminousEmerald,
                         contentColor = ObsidianDeep
@@ -779,6 +858,11 @@ fun WalkieTalkieScreen(
                                             }
                                         )
                                 )
+                                val memberStatus = if (isMe) {
+                                    state.settings.memberStatus
+                                } else {
+                                    room.memberStatuses[memberUid]?.takeIf { it.isNotBlank() } ?: "متاح"
+                                }
                                 Column {
                                     Text(
                                         text = buildString {
@@ -792,8 +876,8 @@ fun WalkieTalkieScreen(
                                         text = when {
                                             isMuted -> "مكتوم"
                                             isSpeaking -> "يتحدث الآن"
-                                            isOwner -> "المالك"
-                                            else -> "متصل"
+                                            isOwner -> "المالك • $memberStatus"
+                                            else -> memberStatus
                                         },
                                         style = MaterialTheme.typography.labelSmall,
                                         color = when {
@@ -859,7 +943,7 @@ fun WalkieTalkieScreen(
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     if (state.chatMessages.isEmpty()) {
                         Text(
-                            text = "لا توجد رسائل بعد — ابدأ المحادثة مع أعضاء الغرفة!",
+                            text = "لا توجد رسائل بعد — ابدأ المحادثة أو اختر رداً سريعاً!",
                             color = TextSecondary,
                             style = MaterialTheme.typography.bodyMedium
                         )
@@ -867,33 +951,75 @@ fun WalkieTalkieScreen(
                         LazyColumn(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(220.dp),
+                                .height(200.dp),
                             verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             items(state.chatMessages, key = { it.id.ifBlank { it.text + it.senderUid } }) { msg ->
                                 val isMine = msg.senderUid == state.currentUserId
+                                val mapsUrl = remember(msg.text) {
+                                    Regex("https://maps\\.google\\.com/\\?q=[-0-9.,]+").find(msg.text)?.value
+                                }
                                 Column(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .clip(RoundedCornerShape(14.dp))
                                         .background(
-                                            if (isMine) LiquidCyan.copy(alpha = 0.16f)
+                                            if (isMine) glassTheme.primary.copy(alpha = 0.16f)
                                             else GlassWhite.copy(alpha = 0.07f)
                                         )
+                                        .let { mod ->
+                                            if (mapsUrl != null) {
+                                                mod.clickable {
+                                                    runCatching {
+                                                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(mapsUrl)))
+                                                    }
+                                                }
+                                            } else mod
+                                        }
                                         .padding(horizontal = 12.dp, vertical = 8.dp)
                                 ) {
                                     Text(
                                         text = if (isMine) "أنت" else msg.senderName,
                                         style = MaterialTheme.typography.labelSmall,
-                                        color = if (isMine) LiquidCyan else LuminousEmerald,
+                                        color = if (isMine) glassTheme.primary else LuminousEmerald,
                                         fontWeight = FontWeight.Bold
                                     )
                                     Text(
                                         text = msg.text,
                                         style = MaterialTheme.typography.bodyMedium,
-                                        color = TextPrimary
+                                        color = if (mapsUrl != null) glassTheme.primary else TextPrimary,
+                                        textDecoration = if (mapsUrl != null) TextDecoration.Underline else TextDecoration.None
                                     )
                                 }
+                            }
+                        }
+                    }
+
+                    // One-Tap Quick Replies (#8)
+                    val quickReplies = remember {
+                        listOf("أنا في الطريق", "أسمعك بوضوح", "دقيقة وأتصل", "تم")
+                    }
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        quickReplies.forEach { reply ->
+                            LiquidGlassSurface(
+                                modifier = Modifier.clickable { viewModel.sendChatMessage(reply) },
+                                shape = RoundedCornerShape(50),
+                                accentColor = glassTheme.primary,
+                                tintAlpha = 0.14f,
+                                borderAlpha = 0.35f
+                            ) {
+                                Text(
+                                    text = reply,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = GlassWhite,
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                                )
                             }
                         }
                     }
@@ -929,10 +1055,108 @@ fun WalkieTalkieScreen(
             },
             confirmButton = {
                 TextButton(onClick = { showChatDialog = false }) {
-                    Text("إغلاق", color = LiquidCyan, fontWeight = FontWeight.Bold)
+                    Text("إغلاق", color = glassTheme.primary, fontWeight = FontWeight.Bold)
                 }
             }
         )
+    }
+
+    if (showChannelDialog) {
+        ChannelPickerDialog(
+            currentChannel = state.settings.selectedChannel,
+            onSelectChannel = { ch ->
+                viewModel.setSelectedChannel(ch)
+                Toast.makeText(context, "تم التبديل إلى القناة CH %02d".format(ch), Toast.LENGTH_SHORT).show()
+            },
+            onDismiss = { showChannelDialog = false }
+        )
+    }
+
+    if (showStatusDialog) {
+        MemberStatusDialog(
+            currentStatus = state.settings.memberStatus,
+            onSelectStatus = { status ->
+                viewModel.setMemberStatus(status)
+                Toast.makeText(context, "حالتك الآن: $status", Toast.LENGTH_SHORT).show()
+            },
+            onDismiss = { showStatusDialog = false }
+        )
+    }
+
+    if (showStatsDialog) {
+        ActivityStatsDialog(
+            totalTxCount = state.settings.totalTxCount,
+            totalTxSeconds = state.settings.totalTxSeconds,
+            room = state.activeRoom,
+            currentUserId = state.currentUserId,
+            currentDisplayName = state.settings.displayName,
+            onDismiss = { showStatsDialog = false }
+        )
+    }
+
+    if (showQrShareDialog && state.activeRoom != null) {
+        RoomQrShareDialog(
+            room = state.activeRoom!!,
+            onDismiss = { showQrShareDialog = false }
+        )
+    }
+
+    if (showQrScannerDialog) {
+        QrScannerDialog(
+            onScanned = { code, passcode ->
+                showQrScannerDialog = false
+                if (code.isNotBlank() && passcode.isNotBlank()) {
+                    showJoinDialog = false
+                    viewModel.joinRoomByCode(code, passcode)
+                    Toast.makeText(context, "جاري الانضمام للغرفة $code…", Toast.LENGTH_SHORT).show()
+                } else if (code.isNotBlank()) {
+                    joinRoomCodeInput = code
+                    joinPasscodeInput = passcode
+                    Toast.makeText(context, "تم مسح رمز الغرفة: $code", Toast.LENGTH_SHORT).show()
+                }
+            },
+            onDismiss = { showQrScannerDialog = false }
+        )
+    }
+    }
+}
+
+@Composable
+private fun QuickActionGlassChip(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    accentColor: androidx.compose.ui.graphics.Color,
+    testTag: String,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    onClick: () -> Unit
+) {
+    LiquidGlassSurface(
+        modifier = modifier
+            .alpha(if (enabled) 1f else 0.45f)
+            .testTag(testTag)
+            .clickable(enabled = enabled, onClick = onClick),
+        shape = RoundedCornerShape(16.dp),
+        accentColor = accentColor,
+        tintAlpha = 0.14f,
+        borderAlpha = 0.35f
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 8.dp, horizontal = 4.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(3.dp)
+        ) {
+            Icon(icon, contentDescription = label, tint = accentColor, modifier = Modifier.size(18.dp))
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelSmall,
+                color = GlassWhite,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1
+            )
+        }
     }
 }
 
@@ -940,10 +1164,13 @@ fun WalkieTalkieScreen(
 private fun TopGlassHeader(
     refreshRateHz: Int,
     rogerBeepEnabled: Boolean,
+    audioRoute: AudioOutputRoute,
     iconOpacity: Float,
+    onCycleAudioRoute: () -> Unit,
     onToggleRogerBeep: () -> Unit,
     onOpenSettings: () -> Unit
 ) {
+    val themeColor = LocalGlassAccent.current.primary
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
@@ -956,7 +1183,7 @@ private fun TopGlassHeader(
             LuxuryGlassIconBadge(
                 icon = Icons.Rounded.Radio,
                 contentDescription = stringResource(R.string.app_name),
-                accentColor = LiquidCyan,
+                accentColor = themeColor,
                 isActive = true,
                 size = 46.dp,
                 iconSize = 24.dp,
@@ -980,7 +1207,7 @@ private fun TopGlassHeader(
                         modifier = Modifier.size(14.dp)
                     )
                     Text(
-                        text = "بث سحابي • أي شبكة",
+                        text = "بث سحابي • ${audioRoute.labelAr}",
                         style = MaterialTheme.typography.labelMedium,
                         color = TextSecondary
                     )
@@ -990,25 +1217,25 @@ private fun TopGlassHeader(
 
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
             LiquidGlassSurface(
                 shape = RoundedCornerShape(14.dp),
-                accentColor = LiquidCyan,
+                accentColor = themeColor,
                 tintAlpha = 0.12f,
                 borderAlpha = 0.35f,
                 modifier = Modifier.alpha(iconOpacity)
             ) {
                 Row(
-                    modifier = Modifier.padding(horizontal = 9.dp, vertical = 6.dp),
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(3.dp)
                 ) {
                     Icon(
                         imageVector = Icons.Rounded.Bolt,
                         contentDescription = "معدل التحديث",
-                        tint = LiquidCyan,
-                        modifier = Modifier.size(14.dp)
+                        tint = themeColor,
+                        modifier = Modifier.size(13.dp)
                     )
                     Text(
                         text = "${refreshRateHz}Hz",
@@ -1021,12 +1248,29 @@ private fun TopGlassHeader(
             }
 
             LuxuryGlassIconBadge(
+                icon = when (audioRoute) {
+                    AudioOutputRoute.SPEAKER -> Icons.Rounded.VolumeUp
+                    AudioOutputRoute.EARPIECE -> Icons.Rounded.PhoneInTalk
+                    AudioOutputRoute.BLUETOOTH -> Icons.Rounded.BluetoothAudio
+                },
+                contentDescription = audioRoute.labelAr,
+                accentColor = themeColor,
+                isActive = true,
+                size = 40.dp,
+                iconSize = 19.dp,
+                onClick = onCycleAudioRoute,
+                modifier = Modifier
+                    .alpha(iconOpacity)
+                    .testTag("audio_route_toggle")
+            )
+
+            LuxuryGlassIconBadge(
                 icon = if (rogerBeepEnabled) Icons.Rounded.NotificationsActive else Icons.Rounded.NotificationsOff,
                 contentDescription = stringResource(R.string.roger_beep_on),
                 accentColor = ElectricSapphire,
                 isActive = rogerBeepEnabled,
-                size = 42.dp,
-                iconSize = 20.dp,
+                size = 40.dp,
+                iconSize = 19.dp,
                 onClick = onToggleRogerBeep,
                 modifier = Modifier
                     .alpha(iconOpacity)
@@ -1036,10 +1280,10 @@ private fun TopGlassHeader(
             LuxuryGlassIconBadge(
                 icon = Icons.Rounded.Settings,
                 contentDescription = "الإعدادات",
-                accentColor = LiquidCyan,
+                accentColor = themeColor,
                 isActive = true,
-                size = 42.dp,
-                iconSize = 20.dp,
+                size = 40.dp,
+                iconSize = 19.dp,
                 onClick = onOpenSettings,
                 modifier = Modifier
                     .alpha(iconOpacity)
@@ -1052,22 +1296,28 @@ private fun TopGlassHeader(
 @Composable
 private fun CloudRoomGlassCard(
     activeRoom: CloudRoom?,
+    selectedChannel: Int,
+    memberStatus: String,
     onCreateRoomClick: () -> Unit,
     onJoinRoomClick: () -> Unit,
     onCopyCode: (String) -> Unit,
     onShareRoom: (CloudRoom) -> Unit,
+    onShowQrShare: () -> Unit,
+    onPickChannel: () -> Unit,
+    onPickStatus: () -> Unit,
     onShowMembers: () -> Unit
 ) {
+    val themeColor = LocalGlassAccent.current.primary
     LiquidGlassSurface(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(26.dp),
-        accentColor = LiquidCyan,
+        accentColor = themeColor,
         tintAlpha = 0.09f,
         borderAlpha = 0.30f
     ) {
         Column(
             modifier = Modifier.padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+            verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             if (activeRoom != null) {
                 Row(
@@ -1076,11 +1326,24 @@ private fun CloudRoomGlassCard(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = activeRoom.roomName,
-                            style = MaterialTheme.typography.labelMedium,
-                            color = TextSecondary
-                        )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Text(
+                                text = activeRoom.roomName,
+                                style = MaterialTheme.typography.labelMedium,
+                                color = TextSecondary
+                            )
+                            if (activeRoom.channelLockEnabled) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Lock,
+                                    contentDescription = "القناة مقفولة بأولوية المتحدث",
+                                    tint = RubyCrimson,
+                                    modifier = Modifier.size(13.dp)
+                                )
+                            }
+                        }
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -1100,7 +1363,7 @@ private fun CloudRoomGlassCard(
                                 Icon(
                                     imageVector = Icons.Rounded.ContentCopy,
                                     contentDescription = "نسخ الرمز",
-                                    tint = LiquidCyan,
+                                    tint = themeColor,
                                     modifier = Modifier.size(18.dp)
                                 )
                             }
@@ -1111,6 +1374,14 @@ private fun CloudRoomGlassCard(
                                 modifier = Modifier
                                     .size(20.dp)
                                     .clickable { onShareRoom(activeRoom) }
+                            )
+                            Icon(
+                                imageVector = Icons.Rounded.QrCode2,
+                                contentDescription = "رمز QR للغرفة",
+                                tint = themeColor,
+                                modifier = Modifier
+                                    .size(21.dp)
+                                    .clickable { onShowQrShare() }
                             )
                         }
                     }
@@ -1143,6 +1414,75 @@ private fun CloudRoomGlassCard(
                         }
                     }
                 }
+
+                // Channel selector & My Status strip
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    LiquidGlassSurface(
+                        modifier = Modifier
+                            .weight(1f)
+                            .testTag("channel_picker_button")
+                            .clickable(onClick = onPickChannel),
+                        shape = RoundedCornerShape(14.dp),
+                        accentColor = themeColor,
+                        tintAlpha = 0.14f,
+                        borderAlpha = 0.32f
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 10.dp, vertical = 6.dp),
+                            horizontalArrangement = Arrangement.Center,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(Icons.Rounded.SettingsInputAntenna, contentDescription = null, tint = themeColor, modifier = Modifier.size(15.dp))
+                            Spacer(modifier = Modifier.size(5.dp))
+                            Text(
+                                text = "القناة: CH %02d".format(selectedChannel),
+                                fontFamily = JetBrainsMonoFontFamily,
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = GlassWhite
+                            )
+                        }
+                    }
+
+                    LiquidGlassSurface(
+                        modifier = Modifier
+                            .weight(1f)
+                            .testTag("member_status_button")
+                            .clickable(onClick = onPickStatus),
+                        shape = RoundedCornerShape(14.dp),
+                        accentColor = LuminousEmerald,
+                        tintAlpha = 0.14f,
+                        borderAlpha = 0.32f
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 10.dp, vertical = 6.dp),
+                            horizontalArrangement = Arrangement.Center,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(7.dp)
+                                    .clip(CircleShape)
+                                    .background(LuminousEmerald)
+                            )
+                            Spacer(modifier = Modifier.size(5.dp))
+                            Text(
+                                text = "الحالة: $memberStatus",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = GlassWhite,
+                                maxLines = 1
+                            )
+                        }
+                    }
+                }
             } else {
                 Text(
                     text = "لا توجد غرفة نشطة — أنشئ غرفة جديدة أو انضم برمز صديقك",
@@ -1161,7 +1501,7 @@ private fun CloudRoomGlassCard(
                         .testTag("create_room_button")
                         .clickable(onClick = onCreateRoomClick),
                     shape = RoundedCornerShape(16.dp),
-                    accentColor = LiquidCyan,
+                    accentColor = themeColor,
                     tintAlpha = 0.16f,
                     borderAlpha = 0.36f
                 ) {
@@ -1175,7 +1515,7 @@ private fun CloudRoomGlassCard(
                         Icon(
                             imageVector = Icons.Rounded.Add,
                             contentDescription = null,
-                            tint = LiquidCyan,
+                            tint = themeColor,
                             modifier = Modifier.size(18.dp)
                         )
                         Spacer(modifier = Modifier.size(6.dp))
@@ -1225,19 +1565,21 @@ private fun CloudRoomGlassCard(
 
 @Composable
 private fun LiveStatusPill(state: WalkieTalkieUiState, txSeconds: Int) {
+    val themeColor = LocalGlassAccent.current.primary
     val remoteSpeaker = state.activeRoom?.activeSpeakerName?.takeIf {
         it.isNotBlank() && state.isReceiving
     }
     val dotColor = when {
         state.mode == RadioMode.ALWAYS_OFF -> RubyCrimson
         state.isTransmitting -> LuminousEmerald
-        state.isReceiving -> LiquidCyan
-        else -> ElectricSapphire
+        state.isReceiving -> themeColor
+        else -> LocalGlassAccent.current.secondary
     }
     val timerText = if (state.isTransmitting) {
         val mins = txSeconds / 60
         val secs = txSeconds % 60
-        " • %02d:%02d".format(mins, secs)
+        val autoTxt = if (state.autoMuteRemainingSec > 0) " • إيقاف خلال ${state.autoMuteRemainingSec}ث" else ""
+        " • %02d:%02d%s".format(mins, secs, autoTxt)
     } else ""
 
     val statusText = when {
