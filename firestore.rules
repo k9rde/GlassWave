@@ -40,7 +40,7 @@ service cloud.firestore {
              ]) &&
              data.keys().hasOnly([
                'ownerId', 'roomCode', 'roomName', 'roomPasscode', 'memberUids', 'memberNames',
-               'mutedUids', 'memberStatuses', 'memberTxCounts', 'channelLockEnabled',
+               'mutedUids', 'memberStatuses', 'memberAvatars', 'memberTxCounts', 'channelLockEnabled',
                'lastPingUid', 'lastPingName', 'lastPingAt',
                'activeSpeakerUid', 'activeSpeakerName', 'createdAt', 'updatedAt'
              ]) &&
@@ -51,6 +51,7 @@ service cloud.firestore {
              isValidMemberList(data.memberUids) &&
              (!('memberNames' in data) || (data.memberNames is map && data.memberNames.size() <= 25)) &&
              (!('memberStatuses' in data) || (data.memberStatuses is map && data.memberStatuses.size() <= 25)) &&
+             (!('memberAvatars' in data) || (data.memberAvatars is map && data.memberAvatars.size() <= 25)) &&
              (!('memberTxCounts' in data) || (data.memberTxCounts is map && data.memberTxCounts.size() <= 25)) &&
              (!('channelLockEnabled' in data) || data.channelLockEnabled is bool) &&
              (!('mutedUids' in data) || isValidMutedList(data.mutedUids)) &&
@@ -113,17 +114,17 @@ service cloud.firestore {
                        (
                          // Action 1: Join room by adding self to memberUids
                          (
-                           incoming().diff(existing()).affectedKeys().hasOnly(['memberUids', 'memberNames', 'memberStatuses', 'updatedAt']) &&
+                           incoming().diff(existing()).affectedKeys().hasOnly(['memberUids', 'memberNames', 'memberStatuses', 'memberAvatars', 'updatedAt']) &&
                            request.auth.uid in incoming().memberUids &&
                            incoming().memberUids.hasAll(existing().memberUids) &&
                            incoming().memberUids.size() <= existing().memberUids.size() + 1
                          ) ||
-                         // Action 2: Update speaker, display name, status, tx count, or Ping (members only)
+                         // Action 2: Update speaker, display name, status, avatar, tx count, or Ping (members only)
                          (
                            request.auth.uid in existing().memberUids &&
                            incoming().diff(existing()).affectedKeys().hasOnly([
                              'activeSpeakerUid', 'activeSpeakerName', 'memberNames',
-                             'memberStatuses', 'memberTxCounts',
+                             'memberStatuses', 'memberAvatars', 'memberTxCounts',
                              'lastPingUid', 'lastPingName', 'lastPingAt', 'updatedAt'
                            ])
                          ) ||
@@ -133,21 +134,25 @@ service cloud.firestore {
                            !(request.auth.uid in incoming().memberUids) &&
                            existing().memberUids.hasAll(incoming().memberUids) &&
                            incoming().memberUids.size() == existing().memberUids.size() - 1 &&
-                           incoming().diff(existing()).affectedKeys().hasOnly(['memberUids', 'memberNames', 'memberStatuses', 'updatedAt'])
+                           incoming().diff(existing()).affectedKeys().hasOnly(['memberUids', 'memberNames', 'memberStatuses', 'memberAvatars', 'updatedAt'])
                          ) ||
                          // Action 4: Owner moderation (mute/unmute, kick member, update passcode, toggle channel lock)
                          (
                            request.auth.uid == existing().ownerId &&
                            existing().ownerId in incoming().memberUids &&
                            incoming().diff(existing()).affectedKeys().hasOnly([
-                             'memberUids', 'memberNames', 'mutedUids', 'roomPasscode', 'channelLockEnabled', 'updatedAt'
+                             'memberUids', 'memberNames', 'memberStatuses', 'memberAvatars', 'memberTxCounts',
+                             'mutedUids', 'roomPasscode', 'channelLockEnabled', 'updatedAt'
                            ])
                          )
                        );
 
       allow delete: if isSignedIn() &&
                        isValidId(roomId) &&
-                       existing().ownerId == request.auth.uid;
+                       (
+                         existing().ownerId == request.auth.uid ||
+                         (request.auth.uid in existing().memberUids && existing().memberUids.size() == 1)
+                       );
 
       match /packets/{packetId} {
         allow get: if isSignedIn() &&

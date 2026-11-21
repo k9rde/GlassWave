@@ -49,6 +49,7 @@ import androidx.compose.material.icons.rounded.BluetoothAudio
 import androidx.compose.material.icons.rounded.Bolt
 import androidx.compose.material.icons.rounded.Campaign
 import androidx.compose.material.icons.rounded.Chat
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.GroupAdd
 import androidx.compose.material.icons.rounded.LocationOn
@@ -121,6 +122,7 @@ import com.example.ui.components.LiquidAuroraBackground
 import com.example.ui.components.LiquidGlassPttOrb
 import com.example.ui.components.LiquidGlassSurface
 import com.example.ui.components.LuxuryGlassIconBadge
+import com.example.ui.components.MemberAvatarCircle
 import com.example.ui.components.MemberStatusDialog
 import com.example.ui.components.QrScannerDialog
 import com.example.ui.components.RoomQrShareDialog
@@ -508,12 +510,31 @@ fun WalkieTalkieScreen(
                         tintAlpha = 0.18f,
                         borderAlpha = 0.45f
                     ) {
-                        Text(
-                            text = state.errorMessage ?: "",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = GlassWhite,
-                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)
-                        )
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(start = 14.dp, end = 6.dp, top = 8.dp, bottom = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(
+                                text = state.errorMessage ?: "",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = GlassWhite,
+                                modifier = Modifier.weight(1f)
+                            )
+                            IconButton(
+                                onClick = { viewModel.clearErrorMessage() },
+                                modifier = Modifier.size(36.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Close,
+                                    contentDescription = "إغلاق التنبيه",
+                                    tint = GlassWhite.copy(alpha = 0.85f),
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -839,6 +860,8 @@ fun WalkieTalkieScreen(
     if (showMembersDialog && state.activeRoom != null) {
         val room = state.activeRoom!!
         val amIOwner = room.ownerId == state.currentUserId
+        var previewMemberUid by remember { mutableStateOf<String?>(null) }
+
         AlertDialog(
             onDismissRequest = { showMembersDialog = false },
             containerColor = ObsidianSurface,
@@ -850,7 +873,13 @@ fun WalkieTalkieScreen(
                 )
             },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 340.dp)
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
                     room.memberUids.forEachIndexed { idx, memberUid ->
                         val isMe = memberUid == state.currentUserId
                         val isOwner = memberUid == room.ownerId
@@ -860,10 +889,21 @@ fun WalkieTalkieScreen(
                             isMe -> state.settings.displayName.ifBlank { "أنت" }
                             else -> room.memberNames[memberUid]?.takeIf { it.isNotBlank() } ?: "عضو ${idx + 1}"
                         }
+                        val localAvatarPath = if (isMe) state.settings.avatarUri else null
+                        val thumbAvatarB64 = if (isMe) {
+                            state.settings.avatarThumbBase64.ifBlank { room.memberAvatars[memberUid] ?: "" }
+                        } else {
+                            room.memberAvatars[memberUid] ?: ""
+                        }
+                        val statusColor = when {
+                            isMuted -> RubyCrimson
+                            isSpeaking -> LuminousEmerald
+                            else -> glassTheme.primary
+                        }
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clip(RoundedCornerShape(14.dp))
+                                .clip(RoundedCornerShape(16.dp))
                                 .background(
                                     when {
                                         isMuted -> RubyCrimson.copy(alpha = 0.15f)
@@ -871,26 +911,23 @@ fun WalkieTalkieScreen(
                                         else -> GlassWhite.copy(alpha = 0.06f)
                                     }
                                 )
-                                .padding(horizontal = 12.dp, vertical = 8.dp),
+                                .clickable { previewMemberUid = memberUid }
+                                .padding(horizontal = 12.dp, vertical = 9.dp),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Row(
                                 modifier = Modifier.weight(1f),
                                 verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
                             ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(10.dp)
-                                        .clip(CircleShape)
-                                        .background(
-                                            when {
-                                                isMuted -> RubyCrimson
-                                                isSpeaking -> LuminousEmerald
-                                                else -> LiquidCyan
-                                            }
-                                        )
+                                MemberAvatarCircle(
+                                    name = displayName,
+                                    localPath = localAvatarPath,
+                                    base64Thumb = thumbAvatarB64,
+                                    size = 44.dp,
+                                    borderColor = statusColor,
+                                    statusDotColor = statusColor
                                 )
                                 val memberStatus = if (isMe) {
                                     state.settings.memberStatus
@@ -904,7 +941,9 @@ fun WalkieTalkieScreen(
                                             if (isMe) append(" (أنت)")
                                         },
                                         color = TextPrimary,
-                                        fontWeight = if (isMe || isSpeaking) FontWeight.Bold else FontWeight.Normal
+                                        fontWeight = if (isMe || isSpeaking) FontWeight.Bold else FontWeight.SemiBold,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
                                     )
                                     Text(
                                         text = when {
@@ -917,7 +956,7 @@ fun WalkieTalkieScreen(
                                         color = when {
                                             isMuted -> RubyCrimson
                                             isSpeaking -> LuminousEmerald
-                                            isOwner -> LiquidCyan
+                                            isOwner -> glassTheme.primary
                                             else -> TextSecondary
                                         }
                                     )
@@ -955,10 +994,72 @@ fun WalkieTalkieScreen(
             },
             confirmButton = {
                 TextButton(onClick = { showMembersDialog = false }) {
-                    Text("إغلاق", color = LiquidCyan, fontWeight = FontWeight.Bold)
+                    Text("إغلاق", color = glassTheme.primary, fontWeight = FontWeight.Bold)
                 }
             }
         )
+
+        previewMemberUid?.let { targetUid ->
+            val isMe = targetUid == state.currentUserId
+            val isOwner = targetUid == room.ownerId
+            val name = if (isMe) {
+                state.settings.displayName.ifBlank { "أنت" }
+            } else {
+                room.memberNames[targetUid]?.takeIf { it.isNotBlank() } ?: "عضو"
+            }
+            val status = if (isMe) {
+                state.settings.memberStatus
+            } else {
+                room.memberStatuses[targetUid]?.takeIf { it.isNotBlank() } ?: "متاح"
+            }
+            val txCount = room.memberTxCounts[targetUid] ?: 0
+            val localPath = if (isMe) state.settings.avatarUri else null
+            val b64 = if (isMe) {
+                state.settings.avatarThumbBase64.ifBlank { room.memberAvatars[targetUid] ?: "" }
+            } else {
+                room.memberAvatars[targetUid] ?: ""
+            }
+            AlertDialog(
+                onDismissRequest = { previewMemberUid = null },
+                containerColor = ObsidianSurface,
+                text = {
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        MemberAvatarCircle(
+                            name = name,
+                            localPath = localPath,
+                            base64Thumb = b64,
+                            size = 116.dp,
+                            borderColor = glassTheme.primary
+                        )
+                        Text(
+                            text = name,
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = TextPrimary
+                        )
+                        Text(
+                            text = if (isOwner) "مالك الغرفة • $status" else "عضو • $status",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = LuminousEmerald
+                        )
+                        Text(
+                            text = "عدد مشاركات الإرسال: $txCount",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = TextSecondary
+                        )
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = { previewMemberUid = null }) {
+                        Text("تم", color = glassTheme.primary, fontWeight = FontWeight.Bold)
+                    }
+                }
+            )
+        }
     }
 
     if (showChatDialog && state.activeRoom != null) {

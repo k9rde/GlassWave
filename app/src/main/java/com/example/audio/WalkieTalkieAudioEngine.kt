@@ -197,7 +197,14 @@ class WalkieTalkieAudioEngine {
                 val processed = if (radioFxEnabled) applyRadioFx(pcm) else pcm
                 synchronized(playbackLock) {
                     val track = ensurePlaybackTrack()
-                    track?.write(processed, 0, processed.size)
+                    val written = track?.write(processed, 0, processed.size) ?: -1
+                    if (written < 0) {
+                        runCatching {
+                            playbackTrack?.stop()
+                            playbackTrack?.release()
+                        }
+                        playbackTrack = null
+                    }
                 }
                 _isReceiving.value = true
                 receiveDecayJob?.cancel()
@@ -342,11 +349,19 @@ class WalkieTalkieAudioEngine {
             .setTransferMode(AudioTrack.MODE_STATIC)
             .build()
 
-        track.write(pcm, 0, pcm.size)
-        track.play()
-        delay(durationMs.toLong() + 45L)
-        track.stop()
-        track.release()
+        if (track.state != AudioTrack.STATE_INITIALIZED) {
+            runCatching { track.release() }
+            return
+        }
+        try {
+            track.write(pcm, 0, pcm.size)
+            track.play()
+            delay(durationMs.toLong() + 45L)
+            track.stop()
+        } catch (_: Exception) {
+        } finally {
+            runCatching { track.release() }
+        }
     }
 
     private fun applyRadioFx(pcm: ByteArray): ByteArray {

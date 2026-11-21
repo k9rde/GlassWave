@@ -18,6 +18,7 @@ import com.example.data.LocationHelper
 import com.example.data.RoomChatMessage
 import com.example.data.UserSettings
 import com.example.data.UserSettingsStore
+import com.example.data.toArabicErrorMessage
 import com.example.service.FloatingPttService
 import com.example.service.RadioForegroundService
 import com.google.firebase.Firebase
@@ -147,6 +148,24 @@ class WalkieTalkieViewModel(
             FloatingPttService.start(application)
         }
         AudioRouteHelper.applyRoute(application, AudioOutputRoute.SPEAKER)
+        if (initialSettings.avatarThumbBase64.isBlank() && !initialSettings.avatarUri.isNullOrBlank()) {
+            viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                val file = File(initialSettings.avatarUri)
+                if (file.exists()) {
+                    val bmp = android.graphics.BitmapFactory.decodeFile(file.absolutePath)
+                    if (bmp != null) {
+                        val thumb = com.example.ui.components.encodeAvatarThumbnailBase64(bmp)
+                        bmp.recycle()
+                        if (thumb.isNotBlank()) {
+                            updateSettings { it.copy(avatarThumbBase64 = thumb) }
+                            localState.value.activeRoom?.let { room ->
+                                repository.updateMemberAvatar(room, thumb)
+                            }
+                        }
+                    }
+                }
+            }
+        }
         if (currentUserId.isNotBlank()) {
             observeRooms()
         }
@@ -312,7 +331,7 @@ class WalkieTalkieViewModel(
                     if (firestoreError == null && error is CancellationException) throw error
                     val root = firestoreError ?: error
                     localState.update {
-                        it.copy(errorMessage = root.localizedMessage ?: "تعذر الاتصال بالغرف السحابية")
+                        it.copy(errorMessage = toArabicErrorMessage(root, "تعذر الاتصال بالغرف السحابية"))
                     }
                 }
                 .collect { rooms ->
@@ -325,6 +344,7 @@ class WalkieTalkieViewModel(
                         stopAllTransmission()
                         roomDetailJob?.cancel()
                         packetsJob?.cancel()
+                        chatJob?.cancel()
                         localState.update { it.copy(activeRoom = null) }
                     }
                 }
@@ -347,6 +367,12 @@ class WalkieTalkieViewModel(
         }
         syncBackgroundService(room)
         attachRoomListeners(room.id)
+        val thumb = localState.value.settings.avatarThumbBase64
+        if (thumb.isNotBlank() && room.memberAvatars[currentUserId] != thumb) {
+            viewModelScope.launch {
+                repository.updateMemberAvatar(room, thumb)
+            }
+        }
         if (localState.value.mode == RadioMode.ALWAYS_ON && localState.value.hasMicPermission) {
             beginCloudTransmission()
         }
@@ -508,7 +534,9 @@ class WalkieTalkieViewModel(
         viewModelScope.launch {
             repository.updateRoomPasscode(room, newPasscode)
                 .onFailure { err ->
-                    localState.update { it.copy(errorMessage = err.localizedMessage) }
+                    localState.update {
+                        it.copy(errorMessage = toArabicErrorMessage(err, "تعذر تحديث رمز الدخول"))
+                    }
                 }
         }
     }
@@ -566,6 +594,11 @@ class WalkieTalkieViewModel(
         if (room.ownerId != currentUserId) return
         viewModelScope.launch {
             repository.setChannelLock(room, !room.channelLockEnabled)
+                .onFailure { err ->
+                    localState.update {
+                        it.copy(errorMessage = toArabicErrorMessage(err, "تعذر تغيير حالة قفل القناة"))
+                    }
+                }
         }
     }
 
@@ -598,6 +631,21 @@ class WalkieTalkieViewModel(
         localState.update { it.copy(errorMessage = null) }
     }
 
+    fun saveProfileAvatar(avatarFilePath: String, thumbBase64: String) {
+        updateSettings {
+            it.copy(
+                avatarUri = avatarFilePath,
+                avatarThumbBase64 = thumbBase64
+            )
+        }
+        val active = localState.value.activeRoom
+        if (active != null && thumbBase64.isNotBlank()) {
+            viewModelScope.launch {
+                repository.updateMemberAvatar(active, thumbBase64)
+            }
+        }
+    }
+
     fun createRoom(roomName: String, passcode: String) {
         viewModelScope.launch {
             localState.update { it.copy(isBusy = true, errorMessage = null) }
@@ -605,7 +653,8 @@ class WalkieTalkieViewModel(
                 roomName = roomName,
                 passcode = passcode,
                 creatorName = localState.value.settings.displayName,
-                creatorStatus = localState.value.settings.memberStatus
+                creatorStatus = localState.value.settings.memberStatus,
+                creatorAvatar = localState.value.settings.avatarThumbBase64
             )
                 .onSuccess { room ->
                     localState.update { it.copy(isBusy = false) }
@@ -615,7 +664,7 @@ class WalkieTalkieViewModel(
                     localState.update {
                         it.copy(
                             isBusy = false,
-                            errorMessage = err.localizedMessage ?: "تعذر إنشاء الغرفة"
+                            errorMessage = toArabicErrorMessage(err, "تعذر إنشاء الغرفة")
                         )
                     }
                 }
@@ -629,7 +678,8 @@ class WalkieTalkieViewModel(
                 rawCode = code,
                 passcode = passcode,
                 memberName = localState.value.settings.displayName,
-                memberStatus = localState.value.settings.memberStatus
+                memberStatus = localState.value.settings.memberStatus,
+                memberAvatar = localState.value.settings.avatarThumbBase64
             )
                 .onSuccess { room ->
                     localState.update { it.copy(isBusy = false) }
@@ -639,7 +689,7 @@ class WalkieTalkieViewModel(
                     localState.update {
                         it.copy(
                             isBusy = false,
-                            errorMessage = err.localizedMessage ?: "تعذر الانضمام للغرفة"
+                            errorMessage = toArabicErrorMessage(err, "تعذر الانضمام للغرفة")
                         )
                     }
                 }
@@ -655,13 +705,14 @@ class WalkieTalkieViewModel(
                 .onSuccess {
                     roomDetailJob?.cancel()
                     packetsJob?.cancel()
+                    chatJob?.cancel()
                     localState.update { it.copy(isBusy = false, activeRoom = null) }
                 }
                 .onFailure { err ->
                     localState.update {
                         it.copy(
                             isBusy = false,
-                            errorMessage = err.localizedMessage ?: "تعذر الخروج من الغرفة"
+                            errorMessage = toArabicErrorMessage(err, "تعذر الخروج من الغرفة")
                         )
                     }
                 }
@@ -678,13 +729,14 @@ class WalkieTalkieViewModel(
                 .onSuccess {
                     roomDetailJob?.cancel()
                     packetsJob?.cancel()
+                    chatJob?.cancel()
                     localState.update { it.copy(isBusy = false, activeRoom = null) }
                 }
                 .onFailure { err ->
                     localState.update {
                         it.copy(
                             isBusy = false,
-                            errorMessage = err.localizedMessage ?: "تعذر حذف الغرفة"
+                            errorMessage = toArabicErrorMessage(err, "تعذر حذف الغرفة")
                         )
                     }
                 }

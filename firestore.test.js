@@ -41,7 +41,7 @@ beforeEach(async () => {
   }
 });
 
-test("Unauthenticated user cannot read or write rooms or packets", async () => {
+test("Unauthenticated user cannot read or write rooms, packets, or messages", async () => {
   const unauthDb = testEnv.unauthenticatedContext().firestore();
   const now = new Date(Date.now() - 1000);
   await assertFails(unauthDb.collection("rooms").doc("WAVE42").get());
@@ -50,7 +50,12 @@ test("Unauthenticated user cannot read or write rooms or packets", async () => {
       ownerId: ALICE_UID,
       roomCode: "WAVE42",
       roomName: "غرفة الأصدقاء",
+      roomPasscode: "1234",
       memberUids: [ALICE_UID],
+      memberNames: { [ALICE_UID]: "Alice" },
+      memberStatuses: { [ALICE_UID]: "متاح" },
+      memberTxCounts: { [ALICE_UID]: 0 },
+      channelLockEnabled: false,
       activeSpeakerUid: "",
       activeSpeakerName: "",
       createdAt: now,
@@ -60,21 +65,30 @@ test("Unauthenticated user cannot read or write rooms or packets", async () => {
   await assertFails(
     unauthDb.collection("rooms").doc("WAVE42").collection("packets").get()
   );
+  await assertFails(
+    unauthDb.collection("rooms").doc("WAVE42").collection("messages").get()
+  );
 });
 
-test("Authenticated user can create room, friend can join, and both can exchange voice packets", async () => {
+test("Full GlassWave v3 room, voice channel, chat, status, lock, moderation, and leave lifecycle succeeds", async () => {
   const aliceDb = testEnv.authenticatedContext(ALICE_UID).firestore();
   const bobDb = testEnv.authenticatedContext(BOB_UID).firestore();
   const charlieDb = testEnv.authenticatedContext(CHARLIE_UID).firestore();
   const created = new Date(Date.now() - 10000);
 
-  // Alice creates room
+  // Alice creates room mirroring CloudRadioRepository.createRoom
   await assertSucceeds(
     aliceDb.collection("rooms").doc("WAVE42").set({
       ownerId: ALICE_UID,
       roomCode: "WAVE42",
-      roomName: "غرفة الأصدقاء",
+      roomName: "الشلة",
+      roomPasscode: "1234",
       memberUids: [ALICE_UID],
+      memberNames: { [ALICE_UID]: "Alice" },
+      memberStatuses: { [ALICE_UID]: "متاح" },
+      memberAvatars: { [ALICE_UID]: "iVBORw0KGgo=" },
+      memberTxCounts: { [ALICE_UID]: 0 },
+      channelLockEnabled: false,
       activeSpeakerUid: "",
       activeSpeakerName: "",
       createdAt: created,
@@ -82,24 +96,80 @@ test("Authenticated user can create room, friend can join, and both can exchange
     })
   );
 
-  // Bob joins room by adding only himself to memberUids
+  // Bob joins room mirroring CloudRadioRepository.joinRoomByCode
   await assertSucceeds(
     bobDb.collection("rooms").doc("WAVE42").update({
       memberUids: [ALICE_UID, BOB_UID],
-      updatedAt: new Date(Date.now() - 2000),
+      memberNames: { [ALICE_UID]: "Alice", [BOB_UID]: "Bob" },
+      memberStatuses: { [ALICE_UID]: "متاح", [BOB_UID]: "متاح" },
+      memberAvatars: { [ALICE_UID]: "iVBORw0KGgo=", [BOB_UID]: "AAAA" },
+      updatedAt: new Date(Date.now() - 5000),
     })
   );
 
-  // Alice updates active speaker
+  // Bob updates his avatar in the room
+  await assertSucceeds(
+    bobDb.collection("rooms").doc("WAVE42").update({
+      memberAvatars: { [ALICE_UID]: "iVBORw0KGgo=", [BOB_UID]: "BBBB" },
+      updatedAt: new Date(Date.now() - 4800),
+    })
+  );
+
+  // Bob re-joins room (already a member -> Action 2)
+  await assertSucceeds(
+    bobDb.collection("rooms").doc("WAVE42").update({
+      memberNames: { [ALICE_UID]: "Alice", [BOB_UID]: "Bob" },
+      memberStatuses: { [ALICE_UID]: "متاح", [BOB_UID]: "أقود السيارة" },
+      updatedAt: new Date(Date.now() - 4500),
+    })
+  );
+
+  // Alice enables channelLockEnabled & updates roomPasscode (owner only -> Action 4)
   await assertSucceeds(
     aliceDb.collection("rooms").doc("WAVE42").update({
-      activeSpeakerUid: ALICE_UID,
-      activeSpeakerName: "Alice",
-      updatedAt: new Date(Date.now() - 1500),
+      channelLockEnabled: true,
+      updatedAt: new Date(Date.now() - 4000),
+    })
+  );
+  await assertSucceeds(
+    aliceDb.collection("rooms").doc("WAVE42").update({
+      roomPasscode: "5678",
+      updatedAt: new Date(Date.now() - 3800),
     })
   );
 
-  // Alice sends a voice packet
+  // Non-owner Bob cannot toggle channel lock or change passcode
+  await assertFails(
+    bobDb.collection("rooms").doc("WAVE42").update({
+      channelLockEnabled: false,
+      updatedAt: new Date(Date.now() - 3700),
+    })
+  );
+
+  // Bob updates active speaker, tx count, and ping
+  await assertSucceeds(
+    bobDb.collection("rooms").doc("WAVE42").update({
+      activeSpeakerUid: BOB_UID,
+      activeSpeakerName: "Bob",
+      updatedAt: new Date(Date.now() - 3500),
+    })
+  );
+  await assertSucceeds(
+    bobDb.collection("rooms").doc("WAVE42").update({
+      memberTxCounts: { [ALICE_UID]: 0, [BOB_UID]: 1 },
+      updatedAt: new Date(Date.now() - 3400),
+    })
+  );
+  await assertSucceeds(
+    bobDb.collection("rooms").doc("WAVE42").update({
+      lastPingUid: BOB_UID,
+      lastPingName: "Bob",
+      lastPingAt: Date.now(),
+      updatedAt: new Date(Date.now() - 3300),
+    })
+  );
+
+  // Alice sends a voice packet with channel field
   await assertSucceeds(
     aliceDb
       .collection("rooms")
@@ -110,12 +180,29 @@ test("Authenticated user can create room, friend can join, and both can exchange
         senderUid: ALICE_UID,
         senderName: "Alice",
         audioBase64: "AAAA////AAAA",
+        channel: 1,
         memberUids: [ALICE_UID, BOB_UID],
-        createdAt: new Date(Date.now() - 1000),
+        createdAt: new Date(Date.now() - 3000),
       })
   );
 
-  // Bob lists packets using Kotlin-aligned memberUids filter
+  // Alice sends a chat message
+  await assertSucceeds(
+    aliceDb
+      .collection("rooms")
+      .doc("WAVE42")
+      .collection("messages")
+      .doc("msg_1")
+      .set({
+        senderUid: ALICE_UID,
+        senderName: "Alice",
+        text: "أنا في الطريق",
+        memberUids: [ALICE_UID, BOB_UID],
+        createdAt: new Date(Date.now() - 2500),
+      })
+  );
+
+  // Bob lists packets and messages using Kotlin-aligned memberUids filter
   await assertSucceeds(
     bobDb
       .collection("rooms")
@@ -124,8 +211,16 @@ test("Authenticated user can create room, friend can join, and both can exchange
       .where("memberUids", "array-contains", BOB_UID)
       .get()
   );
+  await assertSucceeds(
+    bobDb
+      .collection("rooms")
+      .doc("WAVE42")
+      .collection("messages")
+      .where("memberUids", "array-contains", BOB_UID)
+      .get()
+  );
 
-  // Charlie (non-member) cannot read Alice's packet, run unfiltered list, or spoof speaker state
+  // Charlie (non-member) cannot read packets, messages, or spoof speaker state
   await assertFails(
     charlieDb
       .collection("rooms")
@@ -138,29 +233,42 @@ test("Authenticated user can create room, friend can join, and both can exchange
     charlieDb
       .collection("rooms")
       .doc("WAVE42")
-      .collection("packets")
+      .collection("messages")
+      .doc("msg_1")
       .get()
   );
   await assertFails(
     charlieDb.collection("rooms").doc("WAVE42").update({
       activeSpeakerUid: CHARLIE_UID,
       activeSpeakerName: "Charlie",
-      updatedAt: new Date(Date.now() - 500),
+      updatedAt: new Date(Date.now() - 2000),
     })
   );
 
-  // Bob can leave the room by removing only himself
+  // Owner mutes Bob and then leaves; last remaining member Bob can delete room
   await assertSucceeds(
-    bobDb.collection("rooms").doc("WAVE42").update({
-      memberUids: [ALICE_UID],
-      updatedAt: new Date(Date.now() - 200),
+    aliceDb.collection("rooms").doc("WAVE42").update({
+      mutedUids: [BOB_UID],
+      updatedAt: new Date(Date.now() - 1500),
     })
+  );
+  await assertSucceeds(
+    aliceDb.collection("rooms").doc("WAVE42").update({
+      memberUids: [BOB_UID],
+      updatedAt: new Date(Date.now() - 1000),
+    })
+  );
+  await assertSucceeds(
+    bobDb.collection("rooms").doc("WAVE42").delete()
   );
 });
 
-test("Rejects shadow fields, immutable field edits, and unfiltered room list queries", async () => {
+test("Rejects shadow fields, immutable field edits, non-ASCII room IDs, and unfiltered queries", async () => {
   const aliceDb = testEnv.authenticatedContext(ALICE_UID).firestore();
   const created = new Date(Date.now() - 10000);
+
+  // Non-ASCII roomId rejected by isValidId
+  await assertFails(aliceDb.collection("rooms").doc("الشلة").get());
 
   // Shadow field rejected
   await assertFails(

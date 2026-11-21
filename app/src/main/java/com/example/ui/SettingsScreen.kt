@@ -96,9 +96,11 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.BuildConfig
+import com.example.ui.components.AvatarEditorDialog
 import com.example.ui.components.LiquidAuroraBackground
 import com.example.ui.components.LiquidGlassSurface
 import com.example.ui.components.LuxuryGlassIconBadge
+import com.example.ui.components.loadOrientedBitmap
 import com.example.ui.theme.ElectricSapphire
 import com.example.ui.theme.GlassThemeOption
 import com.example.ui.theme.GlassWhite
@@ -125,26 +127,17 @@ fun SettingsScreen(
     var nameInput by remember(state.settings.displayName) {
         mutableStateOf(state.settings.displayName)
     }
+    var pendingEditorBitmap by remember { mutableStateOf<android.graphics.Bitmap?>(null) }
 
     val photoPicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia()
     ) { uri: Uri? ->
         if (uri != null) {
-            try {
-                val inputStream = context.contentResolver.openInputStream(uri)
-                val decoded = inputStream?.use { BitmapFactory.decodeStream(it) }
-                if (decoded != null) {
-                    val avatarFile = java.io.File(context.filesDir, "avatar_${state.currentUserId}_${System.currentTimeMillis()}.jpg")
-                    java.io.FileOutputStream(avatarFile).use { out ->
-                        decoded.compress(android.graphics.Bitmap.CompressFormat.JPEG, 88, out)
-                    }
-                    viewModel.updateSettings { it.copy(avatarUri = avatarFile.absolutePath) }
-                    Toast.makeText(context, "تم حفظ الصورة الشخصية بنجاح", Toast.LENGTH_SHORT).show()
-                } else {
-                    Toast.makeText(context, "تعذر قراءة الصورة المختارة", Toast.LENGTH_SHORT).show()
-                }
-            } catch (_: Exception) {
-                Toast.makeText(context, "تعذر حفظ الصورة الشخصية", Toast.LENGTH_SHORT).show()
+            val loaded = loadOrientedBitmap(context, uri, maxDim = 1024)
+            if (loaded != null) {
+                pendingEditorBitmap = loaded
+            } else {
+                Toast.makeText(context, "تعذر قراءة الصورة المختارة", Toast.LENGTH_SHORT).show()
             }
         }
     }
@@ -164,6 +157,32 @@ fun SettingsScreen(
                 null
             }
         }
+    }
+
+    pendingEditorBitmap?.let { editorSource ->
+        AvatarEditorDialog(
+            sourceBitmap = editorSource,
+            onSave = { croppedBitmap, thumbBase64 ->
+                try {
+                    val avatarFile = java.io.File(
+                        context.filesDir,
+                        "avatar_${state.currentUserId}_${System.currentTimeMillis()}.jpg"
+                    )
+                    java.io.FileOutputStream(avatarFile).use { out ->
+                        croppedBitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 92, out)
+                    }
+                    viewModel.saveProfileAvatar(avatarFile.absolutePath, thumbBase64)
+                    Toast.makeText(context, "تم تعديل وحفظ الصورة الشخصية", Toast.LENGTH_SHORT).show()
+                } catch (_: Exception) {
+                    Toast.makeText(context, "تعذر حفظ الصورة الشخصية", Toast.LENGTH_SHORT).show()
+                } finally {
+                    pendingEditorBitmap = null
+                }
+            },
+            onDismiss = {
+                pendingEditorBitmap = null
+            }
+        )
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
@@ -285,7 +304,7 @@ fun SettingsScreen(
                         Button(
                             onClick = {
                                 viewModel.updateSettings { it.copy(displayName = nameInput.trim().ifBlank { "صديق" }) }
-                                Toast.makeText(context, "تم حفظ الاسم", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, "تم حفظ الملف الشخصي", Toast.LENGTH_SHORT).show()
                             },
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = LiquidCyan,
@@ -295,6 +314,32 @@ fun SettingsScreen(
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Text("حفظ الملف الشخصي", fontWeight = FontWeight.Bold)
+                        }
+                        if (!state.settings.avatarUri.isNullOrBlank()) {
+                            androidx.compose.material3.OutlinedButton(
+                                onClick = {
+                                    val path = state.settings.avatarUri
+                                    val existing = runCatching {
+                                        val file = java.io.File(path)
+                                        if (file.exists()) {
+                                            BitmapFactory.decodeFile(file.absolutePath)
+                                        } else {
+                                            loadOrientedBitmap(context, Uri.parse(path), maxDim = 1024)
+                                        }
+                                    }.getOrNull()
+                                    if (existing != null) {
+                                        pendingEditorBitmap = existing
+                                    } else {
+                                        photoPicker.launch(
+                                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                                        )
+                                    }
+                                },
+                                shape = RoundedCornerShape(14.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text("تعديل وقص الصورة الحالية", color = LiquidCyan, fontWeight = FontWeight.SemiBold)
+                            }
                         }
                     }
                 }

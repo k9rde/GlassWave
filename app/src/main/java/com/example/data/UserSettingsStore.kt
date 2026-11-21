@@ -5,6 +5,7 @@ import android.content.Context
 data class UserSettings(
     val displayName: String = "",
     val avatarUri: String? = null,
+    val avatarThumbBase64: String = "",
     val glassOpacity: Float = 0.75f,
     val glassTheme: String = "CYAN",
     val memberStatus: String = "متاح",
@@ -38,6 +39,7 @@ class UserSettingsStore(context: Context, userId: String) {
         return UserSettings(
             displayName = savedName ?: defaultName.ifBlank { "صديق" },
             avatarUri = prefs.getString(KEY_AVATAR_URI, null),
+            avatarThumbBase64 = prefs.getString(KEY_AVATAR_THUMB, "") ?: "",
             glassOpacity = prefs.getFloat(KEY_GLASS_OPACITY, 0.75f).coerceIn(0.25f, 1.0f),
             glassTheme = prefs.getString(KEY_GLASS_THEME, "CYAN") ?: "CYAN",
             memberStatus = prefs.getString(KEY_MEMBER_STATUS, "متاح") ?: "متاح",
@@ -64,6 +66,7 @@ class UserSettingsStore(context: Context, userId: String) {
         prefs.edit()
             .putString(KEY_DISPLAY_NAME, settings.displayName.trim().take(40))
             .putString(KEY_AVATAR_URI, settings.avatarUri)
+            .putString(KEY_AVATAR_THUMB, settings.avatarThumbBase64)
             .putFloat(KEY_GLASS_OPACITY, settings.glassOpacity.coerceIn(0.25f, 1.0f))
             .putString(KEY_GLASS_THEME, settings.glassTheme)
             .putString(KEY_MEMBER_STATUS, settings.memberStatus)
@@ -89,6 +92,7 @@ class UserSettingsStore(context: Context, userId: String) {
     companion object {
         private const val KEY_DISPLAY_NAME = "display_name"
         private const val KEY_AVATAR_URI = "avatar_uri"
+        private const val KEY_AVATAR_THUMB = "avatar_thumb_base64"
         private const val KEY_GLASS_OPACITY = "glass_opacity"
         private const val KEY_GLASS_THEME = "glass_theme"
         private const val KEY_MEMBER_STATUS = "member_status"

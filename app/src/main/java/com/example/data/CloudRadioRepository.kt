@@ -124,15 +124,28 @@ class CloudRadioRepository(private val db: FirebaseFirestore) {
         )
     }
 
+    private fun normalizeAsciiDigits(input: String): String {
+        return buildString(input.length) {
+            for (ch in input) {
+                when (ch) {
+                    in '\u0660'..'\u0669' -> append(('0'.code + (ch.code - '\u0660'.code)).toChar())
+                    in '\u06F0'..'\u06F9' -> append(('0'.code + (ch.code - '\u06F0'.code)).toChar())
+                    else -> append(ch)
+                }
+            }
+        }
+    }
+
     suspend fun createRoom(
         roomName: String,
         passcode: String,
         creatorName: String? = null,
-        creatorStatus: String = "متاح"
+        creatorStatus: String = "متاح",
+        creatorAvatar: String = ""
     ): Result<CloudRoom> {
         val code = generateRoomCode()
         val path = "rooms/$code"
-        val cleanPasscode = passcode.trim().take(32)
+        val cleanPasscode = normalizeAsciiDigits(passcode.trim()).take(32)
         if (cleanPasscode.length < 4) {
             return Result.failure(IllegalArgumentException("يرجى إدخال رمز دخول للغرفة (4 أحرف أو أرقام على الأقل)"))
         }
@@ -142,6 +155,8 @@ class CloudRadioRepository(private val db: FirebaseFirestore) {
             val displayName = creatorName?.trim()?.take(40)?.ifBlank { currentDisplayName() } ?: currentDisplayName()
             val memberNames = mapOf(uid to displayName)
             val memberStatuses = mapOf(uid to creatorStatus.ifBlank { "متاح" }.take(24))
+            val safeAvatar = creatorAvatar.take(12000)
+            val memberAvatars = if (safeAvatar.isNotBlank()) mapOf(uid to safeAvatar) else emptyMap()
             val payload = mapOf(
                 "ownerId" to uid,
                 "roomCode" to code,
@@ -150,6 +165,7 @@ class CloudRadioRepository(private val db: FirebaseFirestore) {
                 "memberUids" to listOf(uid),
                 "memberNames" to memberNames,
                 "memberStatuses" to memberStatuses,
+                "memberAvatars" to memberAvatars,
                 "memberTxCounts" to mapOf(uid to 0),
                 "channelLockEnabled" to false,
                 "activeSpeakerUid" to "",
@@ -168,6 +184,7 @@ class CloudRadioRepository(private val db: FirebaseFirestore) {
                     memberUids = listOf(uid),
                     memberNames = memberNames,
                     memberStatuses = memberStatuses,
+                    memberAvatars = memberAvatars,
                     memberTxCounts = mapOf(uid to 0),
                     channelLockEnabled = false
                 )
@@ -184,12 +201,17 @@ class CloudRadioRepository(private val db: FirebaseFirestore) {
         rawCode: String,
         passcode: String,
         memberName: String? = null,
-        memberStatus: String = "متاح"
+        memberStatus: String = "متاح",
+        memberAvatar: String = ""
     ): Result<CloudRoom> {
-        val code = rawCode.trim().uppercase().filter { it.isLetterOrDigit() }
-        val cleanPasscode = passcode.trim()
-        if (code.length < 4 || code.length > 12) {
-            return Result.failure(IllegalArgumentException("رمز الغرفة غير صحيح"))
+        val normalizedRaw = normalizeAsciiDigits(rawCode.trim()).uppercase()
+        val hasUnsupportedChars = normalizedRaw.any {
+            !it.isWhitespace() && it !in 'A'..'Z' && it !in '0'..'9' && it != '_' && it != '-'
+        }
+        val code = normalizedRaw.filter { it in 'A'..'Z' || it in '0'..'9' || it == '_' || it == '-' }
+        val cleanPasscode = normalizeAsciiDigits(passcode.trim()).take(32)
+        if (hasUnsupportedChars || code.length < 4 || code.length > 12) {
+            return Result.failure(IllegalArgumentException("رمز الغرفة غير صحيح (استخدم الأحرف والأرقام الإنجليزية فقط مثل 29X68J)"))
         }
         if (cleanPasscode.length < 4) {
             return Result.failure(IllegalArgumentException("يرجى إدخال رمز دخول الغرفة (4 أحرف أو أرقام على الأقل)"))
@@ -214,6 +236,12 @@ class CloudRadioRepository(private val db: FirebaseFirestore) {
             val displayName = memberName?.trim()?.take(40)?.ifBlank { currentDisplayName() } ?: currentDisplayName()
             val updatedNames = room.memberNames + (uid to displayName)
             val updatedStatuses = room.memberStatuses + (uid to memberStatus.ifBlank { "متاح" }.take(24))
+            val safeAvatar = memberAvatar.take(12000)
+            val updatedAvatars = if (safeAvatar.isNotBlank()) {
+                room.memberAvatars + (uid to safeAvatar)
+            } else {
+                room.memberAvatars
+            }
             if (uid !in room.memberUids) {
                 if (room.memberUids.size >= 25) {
                     return Result.failure(IllegalStateException("الغرفة ممتلئة"))
@@ -224,19 +252,34 @@ class CloudRadioRepository(private val db: FirebaseFirestore) {
                         "memberUids" to updatedMembers,
                         "memberNames" to updatedNames,
                         "memberStatuses" to updatedStatuses,
+                        "memberAvatars" to updatedAvatars,
                         "updatedAt" to FieldValue.serverTimestamp()
                     )
                 ).await()
-                Result.success(room.copy(memberUids = updatedMembers, memberNames = updatedNames, memberStatuses = updatedStatuses))
+                Result.success(
+                    room.copy(
+                        memberUids = updatedMembers,
+                        memberNames = updatedNames,
+                        memberStatuses = updatedStatuses,
+                        memberAvatars = updatedAvatars
+                    )
+                )
             } else {
                 docRef.update(
                     mapOf(
                         "memberNames" to updatedNames,
                         "memberStatuses" to updatedStatuses,
+                        "memberAvatars" to updatedAvatars,
                         "updatedAt" to FieldValue.serverTimestamp()
                     )
                 ).await()
-                Result.success(room.copy(memberNames = updatedNames, memberStatuses = updatedStatuses))
+                Result.success(
+                    room.copy(
+                        memberNames = updatedNames,
+                        memberStatuses = updatedStatuses,
+                        memberAvatars = updatedAvatars
+                    )
+                )
             }
         } catch (e: CancellationException) {
             throw e
@@ -273,14 +316,12 @@ class CloudRadioRepository(private val db: FirebaseFirestore) {
             val uid = requireUserId()
             val remaining = room.memberUids.filter { it != uid }
             if (remaining.isEmpty()) {
-                if (room.ownerId == uid) {
-                    db.collection("rooms").document(room.id).delete().await()
-                }
+                db.collection("rooms").document(room.id).delete().await()
                 return Result.success(Unit)
             }
             db.collection("rooms").document(room.id).update(
                 mapOf(
-                    "memberUids" to remaining,
+                    "memberUids" to FieldValue.arrayRemove(uid),
                     "updatedAt" to FieldValue.serverTimestamp()
                 )
             ).await()
@@ -374,6 +415,27 @@ class CloudRadioRepository(private val db: FirebaseFirestore) {
             db.collection("rooms").document(room.id).update(
                 mapOf(
                     "memberStatuses" to updated,
+                    "updatedAt" to FieldValue.serverTimestamp()
+                )
+            ).await()
+            Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.UPDATE, path)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun updateMemberAvatar(room: CloudRoom, avatarBase64: String): Result<Unit> {
+        val path = "rooms/${room.id}"
+        return try {
+            val uid = requireUserId()
+            val safe = avatarBase64.take(12000)
+            val updated = if (safe.isBlank()) room.memberAvatars - uid else room.memberAvatars + (uid to safe)
+            db.collection("rooms").document(room.id).update(
+                mapOf(
+                    "memberAvatars" to updated,
                     "updatedAt" to FieldValue.serverTimestamp()
                 )
             ).await()
@@ -488,11 +550,15 @@ class CloudRadioRepository(private val db: FirebaseFirestore) {
             val updatedMembers = room.memberUids.filter { it != targetUid }
             val updatedMuted = room.mutedUids.filter { it != targetUid }
             val updatedNames = room.memberNames - targetUid
+            val updatedStatuses = room.memberStatuses - targetUid
+            val updatedAvatars = room.memberAvatars - targetUid
             db.collection("rooms").document(room.id).update(
                 mapOf(
                     "memberUids" to updatedMembers,
                     "mutedUids" to updatedMuted,
                     "memberNames" to updatedNames,
+                    "memberStatuses" to updatedStatuses,
+                    "memberAvatars" to updatedAvatars,
                     "updatedAt" to FieldValue.serverTimestamp()
                 )
             ).await()
@@ -507,7 +573,7 @@ class CloudRadioRepository(private val db: FirebaseFirestore) {
 
     suspend fun updateRoomPasscode(room: CloudRoom, newPasscode: String): Result<Unit> {
         val path = "rooms/${room.id}"
-        val clean = newPasscode.trim().take(32)
+        val clean = normalizeAsciiDigits(newPasscode.trim()).take(32)
         if (clean.length < 4) {
             return Result.failure(IllegalArgumentException("رمز الدخول يجب أن يكون 4 أحرف أو أرقام على الأقل"))
         }

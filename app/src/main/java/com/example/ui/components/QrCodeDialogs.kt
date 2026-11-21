@@ -279,12 +279,14 @@ fun QrScannerDialog(
                                                     return@setAnalyzer
                                                 }
                                                 try {
-                                                    val buffer = imageProxy.planes[0].buffer
+                                                    val plane = imageProxy.planes[0]
+                                                    val buffer = plane.buffer
                                                     val bytes = ByteArray(buffer.remaining())
                                                     buffer.get(bytes)
+                                                    val rowStride = plane.rowStride.coerceAtLeast(imageProxy.width)
                                                     val source = PlanarYUVLuminanceSource(
                                                         bytes,
-                                                        imageProxy.width,
+                                                        rowStride,
                                                         imageProxy.height,
                                                         0,
                                                         0,
@@ -300,7 +302,9 @@ fun QrScannerDialog(
                                                         val (code, pass) = if (parts.size >= 3 && parts[0] == "GLASSWAVE") {
                                                             parts[1].trim() to parts[2].trim()
                                                         } else {
-                                                            rawText.uppercase().filter { it.isLetterOrDigit() }.take(12) to ""
+                                                            rawText.uppercase()
+                                                                .filter { it in 'A'..'Z' || it in '0'..'9' || it == '_' || it == '-' }
+                                                                .take(12) to ""
                                                         }
                                                         previewView.post {
                                                             onScanned(code, pass)

@@ -55,3 +55,25 @@ fun handleFirestoreError(
     Log.e("FirestoreError", "Firestore Error: $jsonString")
     return jsonString
 }
+
+fun toArabicErrorMessage(error: Throwable, fallback: String): String {
+    val firestoreError = generateSequence(error) { it.cause }
+        .filterIsInstance<FirebaseFirestoreException>()
+        .firstOrNull()
+    if (firestoreError != null) {
+        return when (firestoreError.code) {
+            FirebaseFirestoreException.Code.PERMISSION_DENIED ->
+                "رفض الصلاحيات من الخادم: تأكد من تحديث قواعد الغرف وصحة الرمز أو أعد تسجيل الدخول"
+            FirebaseFirestoreException.Code.UNAVAILABLE,
+            FirebaseFirestoreException.Code.DEADLINE_EXCEEDED ->
+                "تعذر الاتصال بالخادم، تحقق من اتصالك بالإنترنت"
+            FirebaseFirestoreException.Code.UNAUTHENTICATED ->
+                "انتهت جلسة تسجيل الدخول، يرجى إعادة تسجيل الدخول"
+            FirebaseFirestoreException.Code.NOT_FOUND ->
+                "الغرفة المطلوبة غير موجودة أو تم حذفها"
+            else -> fallback
+        }
+    }
+    return error.localizedMessage?.takeIf { it.isNotBlank() } ?: fallback
+}
+

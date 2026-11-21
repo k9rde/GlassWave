@@ -17,6 +17,7 @@ data class CloudRoom(
     val memberUids: List<String> = emptyList(),
     val memberNames: Map<String, String> = emptyMap(),
     val memberStatuses: Map<String, String> = emptyMap(),
+    val memberAvatars: Map<String, String> = emptyMap(),
     val memberTxCounts: Map<String, Int> = emptyMap(),
     val channelLockEnabled: Boolean = false,
     val mutedUids: List<String> = emptyList(),

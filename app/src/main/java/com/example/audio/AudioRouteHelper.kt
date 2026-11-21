@@ -58,10 +58,18 @@ object AudioRouteHelper {
                         true
                     }
                     AudioOutputRoute.BLUETOOTH -> {
-                        am.isSpeakerphoneOn = false
-                        am.startBluetoothSco()
-                        am.isBluetoothScoOn = true
-                        true
+                        val hasBtOutput = am.getDevices(AudioManager.GET_DEVICES_OUTPUTS).any {
+                            it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO ||
+                                it.type == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP
+                        }
+                        if (!hasBtOutput) {
+                            false
+                        } else {
+                            am.isSpeakerphoneOn = false
+                            am.startBluetoothSco()
+                            am.isBluetoothScoOn = true
+                            true
+                        }
                     }
                 }
             }
