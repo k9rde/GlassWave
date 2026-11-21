@@ -21,12 +21,14 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -35,6 +37,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
@@ -100,6 +103,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.ContextCompat
@@ -284,24 +288,44 @@ fun WalkieTalkieScreen(
             return@CompositionLocalProvider
         }
 
-        Box(modifier = Modifier.fillMaxSize()) {
+        Box(
+            modifier = Modifier.fillMaxSize()
+        ) {
             LiquidAuroraBackground(
                 mode = state.mode,
                 isTransmitting = state.isTransmitting,
                 isReceiving = state.isReceiving
             )
 
-            Column(
+            BoxWithConstraints(
                 modifier = Modifier
                     .fillMaxSize()
                     .statusBarsPadding()
                     .navigationBarsPadding()
-                    .padding(horizontal = 20.dp, vertical = 14.dp)
-                    .widthIn(max = 560.dp)
-                    .align(Alignment.Center),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.SpaceBetween
+                    .padding(horizontal = 16.dp, vertical = 10.dp)
             ) {
+                val availableHeight = maxHeight
+                val orbOuterSize = when {
+                    availableHeight < 650.dp -> 182.dp
+                    availableHeight < 730.dp -> 204.dp
+                    else -> 222.dp
+                }
+                val orbInnerSize = when {
+                    availableHeight < 650.dp -> 148.dp
+                    availableHeight < 730.dp -> 164.dp
+                    else -> 178.dp
+                }
+
+                Column(
+                    modifier = Modifier
+                        .widthIn(max = 560.dp)
+                        .align(Alignment.TopCenter)
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState())
+                        .heightIn(min = availableHeight),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.SpaceBetween
+                ) {
                 // Top Glass Header Bar
                 TopGlassHeader(
                     refreshRateHz = state.refreshRateHz,
@@ -507,6 +531,8 @@ fun WalkieTalkieScreen(
                     isReceiving = state.isReceiving,
                     micLevel = state.micLevel,
                     enabled = state.hasMicPermission && state.activeRoom != null,
+                    outerSize = orbOuterSize,
+                    orbSize = orbInnerSize,
                     onPressStart = {
                         if (state.settings.hapticEnabled) {
                             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -530,7 +556,7 @@ fun WalkieTalkieScreen(
                         state.isTransmitting -> stringResource(R.string.ptt_live_hint)
                         else -> stringResource(R.string.ptt_hint)
                     },
-                    style = MaterialTheme.typography.bodyMedium,
+                    style = MaterialTheme.typography.bodySmall,
                     color = TextSecondary,
                     textAlign = TextAlign.Center
                 )
@@ -539,7 +565,7 @@ fun WalkieTalkieScreen(
             // Bottom Dual Luxurious Glass Controls: Always-On & Always-Off
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 GlassModeControlButton(
                     title = stringResource(R.string.btn_always_on),
@@ -577,8 +603,9 @@ fun WalkieTalkieScreen(
                     modifier = Modifier.weight(1f)
                 )
             }
+            }
+            }
         }
-    }
 
     if (showCreateDialog) {
         var roomName by remember { mutableStateOf("") }
@@ -1177,6 +1204,9 @@ private fun TopGlassHeader(
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
         Row(
+            modifier = Modifier
+                .weight(1f)
+                .padding(end = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
@@ -1185,31 +1215,66 @@ private fun TopGlassHeader(
                 contentDescription = stringResource(R.string.app_name),
                 accentColor = themeColor,
                 isActive = true,
-                size = 46.dp,
-                iconSize = 24.dp,
+                size = 42.dp,
+                iconSize = 22.dp,
                 modifier = Modifier.alpha(iconOpacity)
             )
-            Column {
-                Text(
-                    text = stringResource(R.string.app_name),
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
-                    color = TextPrimary
-                )
+            Column(modifier = Modifier.weight(1f)) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(5.dp)
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Text(
+                        text = stringResource(R.string.app_name),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = TextPrimary,
+                        maxLines = 1
+                    )
+                    LiquidGlassSurface(
+                        shape = RoundedCornerShape(10.dp),
+                        accentColor = themeColor,
+                        tintAlpha = 0.14f,
+                        borderAlpha = 0.35f,
+                        modifier = Modifier.alpha(iconOpacity)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(2.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Bolt,
+                                contentDescription = "معدل التحديث",
+                                tint = themeColor,
+                                modifier = Modifier.size(11.dp)
+                            )
+                            Text(
+                                text = "${refreshRateHz}Hz",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontFamily = JetBrainsMonoFontFamily,
+                                fontWeight = FontWeight.Bold,
+                                color = GlassWhite
+                            )
+                        }
+                    }
+                }
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
                     Icon(
                         imageVector = Icons.Rounded.Public,
                         contentDescription = null,
                         tint = LuminousEmerald,
-                        modifier = Modifier.size(14.dp)
+                        modifier = Modifier.size(13.dp)
                     )
                     Text(
-                        text = "بث سحابي • ${audioRoute.labelAr}",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = TextSecondary
+                        text = "سحابي • ${audioRoute.labelAr}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = TextSecondary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
             }
@@ -1219,34 +1284,6 @@ private fun TopGlassHeader(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            LiquidGlassSurface(
-                shape = RoundedCornerShape(14.dp),
-                accentColor = themeColor,
-                tintAlpha = 0.12f,
-                borderAlpha = 0.35f,
-                modifier = Modifier.alpha(iconOpacity)
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(3.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.Bolt,
-                        contentDescription = "معدل التحديث",
-                        tint = themeColor,
-                        modifier = Modifier.size(13.dp)
-                    )
-                    Text(
-                        text = "${refreshRateHz}Hz",
-                        style = MaterialTheme.typography.labelSmall,
-                        fontFamily = JetBrainsMonoFontFamily,
-                        fontWeight = FontWeight.Bold,
-                        color = GlassWhite
-                    )
-                }
-            }
-
             LuxuryGlassIconBadge(
                 icon = when (audioRoute) {
                     AudioOutputRoute.SPEAKER -> Icons.Rounded.VolumeUp
@@ -1310,14 +1347,14 @@ private fun CloudRoomGlassCard(
     val themeColor = LocalGlassAccent.current.primary
     LiquidGlassSurface(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(26.dp),
+        shape = RoundedCornerShape(24.dp),
         accentColor = themeColor,
         tintAlpha = 0.09f,
         borderAlpha = 0.30f
     ) {
         Column(
-            modifier = Modifier.padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             if (activeRoom != null) {
                 Row(

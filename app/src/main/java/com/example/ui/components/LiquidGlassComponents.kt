@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
@@ -50,6 +51,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.example.ui.RadioMode
@@ -254,7 +256,9 @@ fun LiquidGlassPttOrb(
     enabled: Boolean,
     onPressStart: () -> Unit,
     onPressEnd: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    outerSize: Dp = 228.dp,
+    orbSize: Dp = 180.dp
 ) {
     val isPressedVisual = isTransmitting
     val scale by animateFloatAsState(
@@ -313,19 +317,18 @@ fun LiquidGlassPttOrb(
     )
 
     Box(
-        modifier = modifier.size(280.dp),
+        modifier = modifier.size(outerSize),
         contentAlignment = Alignment.Center
     ) {
         // 120Hz reactive liquid rings
         Canvas(modifier = Modifier.fillMaxSize()) {
             val center = Offset(size.width / 2f, size.height / 2f)
-            val baseRadius = size.minDimension * 0.36f
+            val baseRadius = size.minDimension * 0.39f
 
             if (isTransmitting || isReceiving) {
-                // Expanding glass shockwave rings
                 for (i in 0..2) {
                     val p = (pulse + i * 0.33f) % 1f
-                    val radius = baseRadius + p * (size.minDimension * 0.16f) + (smoothLevel * 28f)
+                    val radius = baseRadius + p * (size.minDimension * 0.14f) + (smoothLevel * 22f)
                     val alpha = (1f - p) * (0.45f + smoothLevel * 0.35f)
                     drawCircle(
                         color = coreColor.copy(alpha = alpha.coerceIn(0f, 0.85f)),
@@ -335,17 +338,16 @@ fun LiquidGlassPttOrb(
                     )
                 }
             } else {
-                // Subtle idle specular halo
                 drawCircle(
                     brush = Brush.radialGradient(
                         colors = listOf(
-                            coreColor.copy(alpha = 0.20f),
+                            coreColor.copy(alpha = 0.22f),
                             Color.Transparent
                         ),
                         center = center,
-                        radius = baseRadius * 1.32f
+                        radius = baseRadius * 1.28f
                     ),
-                    radius = baseRadius * 1.32f,
+                    radius = baseRadius * 1.28f,
                     center = center
                 )
             }
@@ -354,26 +356,16 @@ fun LiquidGlassPttOrb(
         // Main Liquid Glass Orb
         Box(
             modifier = Modifier
-                .size(204.dp)
+                .size(orbSize)
                 .scale(scale)
                 .shadow(
-                    elevation = if (isTransmitting) 30.dp else 18.dp,
+                    elevation = if (isTransmitting) 26.dp else 14.dp,
                     shape = CircleShape,
                     ambientColor = coreColor,
                     spotColor = coreColor
                 )
                 .clip(CircleShape)
-                .background(
-                    Brush.radialGradient(
-                        colors = listOf(
-                            secondaryColor.copy(alpha = if (isTransmitting) 0.55f else 0.28f),
-                            coreColor.copy(alpha = if (isTransmitting) 0.34f else 0.16f),
-                            ObsidianDeep.copy(alpha = 0.82f)
-                        ),
-                        center = Offset(140f, 120f),
-                        radius = 380f
-                    )
-                )
+                .background(ObsidianDeep.copy(alpha = 0.86f))
                 .border(
                     width = 1.8.dp,
                     brush = Brush.linearGradient(
@@ -400,18 +392,30 @@ fun LiquidGlassPttOrb(
                 },
             contentAlignment = Alignment.Center
         ) {
-            // Top-left glass specular reflection arc
+            // Smooth DPI-independent glass gradient & top specular sheen
             Canvas(modifier = Modifier.fillMaxSize()) {
+                val orbCenter = Offset(size.width * 0.36f, size.height * 0.32f)
+                drawCircle(
+                    brush = Brush.radialGradient(
+                        colors = listOf(
+                            secondaryColor.copy(alpha = if (isTransmitting) 0.52f else 0.28f),
+                            coreColor.copy(alpha = if (isTransmitting) 0.30f else 0.14f),
+                            Color.Transparent
+                        ),
+                        center = orbCenter,
+                        radius = size.maxDimension * 0.85f
+                    )
+                )
                 drawCircle(
                     brush = Brush.verticalGradient(
                         colors = listOf(
-                            GlassWhite.copy(alpha = 0.26f),
+                            GlassWhite.copy(alpha = 0.22f),
                             Color.Transparent
                         ),
                         startY = 0f,
-                        endY = size.height * 0.48f
+                        endY = size.height * 0.45f
                     ),
-                    radius = size.minDimension * 0.45f,
+                    radius = size.minDimension * 0.44f,
                     center = Offset(size.width / 2f, size.height * 0.46f)
                 )
             }
@@ -435,7 +439,7 @@ fun LiquidGlassPttOrb(
                         isActive = true,
                         barColor = coreColor,
                         accentColor = secondaryColor,
-                        modifier = Modifier.size(width = 108.dp, height = 56.dp)
+                        modifier = Modifier.size(width = 100.dp, height = 50.dp)
                     )
                 } else {
                     val centerIcon = when {
@@ -446,10 +450,10 @@ fun LiquidGlassPttOrb(
                         imageVector = centerIcon,
                         contentDescription = "زر التحدث الفوري",
                         tint = GlassWhite,
-                        modifier = Modifier.size(64.dp)
+                        modifier = Modifier.size(56.dp)
                     )
                 }
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(6.dp))
                 Text(
                     text = when {
                         mode == RadioMode.ALWAYS_OFF -> "مُغلق"
@@ -492,40 +496,43 @@ fun GlassModeControlButton(
 
     LiquidGlassSurface(
         modifier = modifier
+            .heightIn(min = 66.dp)
             .scale(scale)
             .testTag(testTag)
             .clickable(onClick = onClick),
-        shape = RoundedCornerShape(24.dp),
+        shape = RoundedCornerShape(22.dp),
         accentColor = if (isActive) accentColor else GlassWhite,
         tintAlpha = if (isActive) 0.20f else 0.08f,
         borderAlpha = if (isActive) 0.55f else 0.24f
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 14.dp),
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 11.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             LuxuryGlassIconBadge(
                 icon = icon,
                 contentDescription = title,
                 accentColor = accentColor,
                 isActive = isActive,
-                size = 48.dp,
-                iconSize = 24.dp
+                size = 42.dp,
+                iconSize = 21.dp
             )
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = title,
-                    style = MaterialTheme.typography.titleMedium,
+                    style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Bold,
                     color = if (isActive) GlassWhite else TextPrimary,
-                    maxLines = 1
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
                 Text(
                     text = subtitle,
-                    style = MaterialTheme.typography.bodyMedium,
+                    style = MaterialTheme.typography.labelSmall,
                     color = if (isActive) GlassWhite.copy(alpha = 0.85f) else TextSecondary,
-                    maxLines = 1
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
         }
