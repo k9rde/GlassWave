@@ -187,8 +187,12 @@ class CloudRadioRepository(private val db: FirebaseFirestore) {
         memberStatus: String = "متاح"
     ): Result<CloudRoom> {
         val code = rawCode.trim().uppercase().filter { it.isLetterOrDigit() }
+        val cleanPasscode = passcode.trim()
         if (code.length < 4 || code.length > 12) {
-            return Result.failure(IllegalArgumentException("رمز الغرفة غير صالح"))
+            return Result.failure(IllegalArgumentException("رمز الغرفة غير صحيح"))
+        }
+        if (cleanPasscode.length < 4) {
+            return Result.failure(IllegalArgumentException("يرجى إدخال رمز دخول الغرفة (4 أحرف أو أرقام على الأقل)"))
         }
         val path = "rooms/$code"
         return try {
@@ -196,15 +200,15 @@ class CloudRadioRepository(private val db: FirebaseFirestore) {
             val docRef = db.collection("rooms").document(code)
             val snap = docRef.get().await()
             if (!snap.exists()) {
-                return Result.failure(IllegalStateException("لم يتم العثور على غرفة بهذا الرمز"))
+                return Result.failure(IllegalStateException("رمز الغرفة أو كلمة المرور غير صحيحة"))
             }
             val room = snap.toObject(
                 CloudRoom::class.java,
                 DocumentSnapshot.ServerTimestampBehavior.ESTIMATE
             ) ?: return Result.failure(IllegalStateException("بيانات الغرفة غير صالحة"))
 
-            if (room.roomPasscode.isNotBlank() && room.roomPasscode != passcode.trim() && uid !in room.memberUids) {
-                return Result.failure(IllegalArgumentException("رمز دخول الغرفة غير صحيح"))
+            if (room.roomPasscode.isBlank() || room.roomPasscode.trim() != cleanPasscode) {
+                return Result.failure(IllegalArgumentException("رمز الغرفة أو كلمة المرور غير صحيحة"))
             }
 
             val displayName = memberName?.trim()?.take(40)?.ifBlank { currentDisplayName() } ?: currentDisplayName()

@@ -676,6 +676,13 @@ fun WalkieTalkieScreen(
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
+                    if (joinRoomCodeInput.trim().isNotEmpty() && joinPasscodeInput.trim().length < 4) {
+                        Text(
+                            text = "يجب إدخال رمز الدخول (4 أحرف أو أرقام على الأقل) مع رمز الغرفة",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = RubyCrimson
+                        )
+                    }
                     OutlinedButton(
                         onClick = { showQrScannerDialog = true },
                         shape = RoundedCornerShape(14.dp),
@@ -693,7 +700,7 @@ fun WalkieTalkieScreen(
                         viewModel.joinRoomByCode(joinRoomCodeInput, joinPasscodeInput)
                         showJoinDialog = false
                     },
-                    enabled = joinRoomCodeInput.trim().length >= 4,
+                    enabled = joinRoomCodeInput.trim().length >= 4 && joinPasscodeInput.trim().length >= 4,
                     colors = ButtonDefaults.buttonColors(
                         containerColor = LuminousEmerald,
                         contentColor = ObsidianDeep

@@ -16,8 +16,8 @@ android {
     applicationId = "com.example.glasswave"
     minSdk = 24
     targetSdk = 36
-    versionCode = 13
-    versionName = "3.0.1"
+    versionCode = 14
+    versionName = "3.0.2"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
