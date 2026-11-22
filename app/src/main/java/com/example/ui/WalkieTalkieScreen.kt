@@ -66,7 +66,6 @@ import androidx.compose.material.icons.rounded.QrCodeScanner
 import androidx.compose.material.icons.rounded.Radio
 import androidx.compose.material.icons.rounded.Replay
 import androidx.compose.material.icons.rounded.Settings
-import androidx.compose.material.icons.rounded.SettingsInputAntenna
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.SystemUpdate
 import androidx.compose.material.icons.rounded.VolumeOff
@@ -116,7 +115,6 @@ import com.example.R
 import com.example.audio.AudioOutputRoute
 import com.example.data.CloudRoom
 import com.example.ui.components.ActivityStatsDialog
-import com.example.ui.components.ChannelPickerDialog
 import com.example.ui.components.GlassModeControlButton
 import com.example.ui.components.LiquidAuroraBackground
 import com.example.ui.components.LiquidGlassPttOrb
@@ -153,7 +151,6 @@ fun WalkieTalkieScreen(
     var showSettings by remember { mutableStateOf(false) }
     var showMembersDialog by remember { mutableStateOf(false) }
     var showChatDialog by remember { mutableStateOf(false) }
-    var showChannelDialog by remember { mutableStateOf(false) }
     var showStatusDialog by remember { mutableStateOf(false) }
     var showStatsDialog by remember { mutableStateOf(false) }
     var showQrShareDialog by remember { mutableStateOf(false) }
@@ -248,23 +245,8 @@ fun WalkieTalkieScreen(
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    // Hardware Volume Button & Floating Bubble PTT registration
-    DisposableEffect(state.settings.volumeKeyPttEnabled, state.mode, state.activeRoom != null) {
-        HardwarePttBridge.isEnabled = state.settings.volumeKeyPttEnabled &&
-            state.mode == RadioMode.PUSH_TO_TALK &&
-            state.activeRoom != null
-        HardwarePttBridge.onVolumeDownPress = { viewModel.onPttPressStart() }
-        HardwarePttBridge.onVolumeDownRelease = { viewModel.onPttPressEnd() }
-        HardwarePttBridge.onFloatingStart = { viewModel.onPttPressStart() }
-        HardwarePttBridge.onFloatingStop = { viewModel.onPttPressEnd() }
-        onDispose {
-            HardwarePttBridge.isEnabled = false
-            HardwarePttBridge.onVolumeDownPress = null
-            HardwarePttBridge.onVolumeDownRelease = null
-            HardwarePttBridge.onFloatingStart = null
-            HardwarePttBridge.onFloatingStop = null
-        }
-    }
+    // Hardware Volume Button & Floating Bubble PTT callbacks stay managed by RadioSessionManager
+    // so the floating bubble continues working even when the Activity is closed or swiped away.
 
     // Live transmission duration timer
     LaunchedEffect(state.isTransmitting) {
@@ -356,7 +338,6 @@ fun WalkieTalkieScreen(
                 // Cloud Room Card (Works across any house / any network!)
                 CloudRoomGlassCard(
                     activeRoom = state.activeRoom,
-                    selectedChannel = state.settings.selectedChannel,
                     memberStatus = state.settings.memberStatus,
                     onCreateRoomClick = { showCreateDialog = true },
                     onJoinRoomClick = {
@@ -378,7 +359,6 @@ fun WalkieTalkieScreen(
                         context.startActivity(Intent.createChooser(intent, "مشاركة دعوة الغرفة"))
                     },
                     onShowQrShare = { showQrShareDialog = true },
-                    onPickChannel = { showChannelDialog = true },
                     onPickStatus = { showStatusDialog = true },
                     onShowMembers = { showMembersDialog = true }
                 )
@@ -612,7 +592,7 @@ fun WalkieTalkieScreen(
 
                 GlassModeControlButton(
                     title = stringResource(R.string.btn_always_off),
-                    subtitle = if (state.mode == RadioMode.ALWAYS_OFF) "مُغلق بالكامل" else "كتم شامل",
+                    subtitle = if (state.mode == RadioMode.ALWAYS_OFF) "مُغلق بالكامل" else "إيقاف كل الاتصال",
                     icon = Icons.Rounded.PowerSettingsNew,
                     accentColor = RubyCrimson,
                     isActive = state.mode == RadioMode.ALWAYS_OFF,
@@ -1196,17 +1176,6 @@ fun WalkieTalkieScreen(
         )
     }
 
-    if (showChannelDialog) {
-        ChannelPickerDialog(
-            currentChannel = state.settings.selectedChannel,
-            onSelectChannel = { ch ->
-                viewModel.setSelectedChannel(ch)
-                Toast.makeText(context, "تم التبديل إلى القناة CH %02d".format(ch), Toast.LENGTH_SHORT).show()
-            },
-            onDismiss = { showChannelDialog = false }
-        )
-    }
-
     if (showStatusDialog) {
         MemberStatusDialog(
             currentStatus = state.settings.memberStatus,
@@ -1441,14 +1410,12 @@ private fun TopGlassHeader(
 @Composable
 private fun CloudRoomGlassCard(
     activeRoom: CloudRoom?,
-    selectedChannel: Int,
     memberStatus: String,
     onCreateRoomClick: () -> Unit,
     onJoinRoomClick: () -> Unit,
     onCopyCode: (String) -> Unit,
     onShareRoom: (CloudRoom) -> Unit,
     onShowQrShare: () -> Unit,
-    onPickChannel: () -> Unit,
     onPickStatus: () -> Unit,
     onShowMembers: () -> Unit
 ) {
@@ -1483,7 +1450,7 @@ private fun CloudRoomGlassCard(
                             if (activeRoom.channelLockEnabled) {
                                 Icon(
                                     imageVector = Icons.Rounded.Lock,
-                                    contentDescription = "القناة مقفولة بأولوية المتحدث",
+                                    contentDescription = "البث مقفول بأولوية المتحدث",
                                     tint = RubyCrimson,
                                     modifier = Modifier.size(13.dp)
                                 )
@@ -1560,72 +1527,38 @@ private fun CloudRoomGlassCard(
                     }
                 }
 
-                // Channel selector & My Status strip
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                // My Status strip
+                LiquidGlassSurface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("member_status_button")
+                        .clickable(onClick = onPickStatus),
+                    shape = RoundedCornerShape(14.dp),
+                    accentColor = LuminousEmerald,
+                    tintAlpha = 0.14f,
+                    borderAlpha = 0.32f
                 ) {
-                    LiquidGlassSurface(
+                    Row(
                         modifier = Modifier
-                            .weight(1f)
-                            .testTag("channel_picker_button")
-                            .clickable(onClick = onPickChannel),
-                        shape = RoundedCornerShape(14.dp),
-                        accentColor = themeColor,
-                        tintAlpha = 0.14f,
-                        borderAlpha = 0.32f
+                            .fillMaxWidth()
+                            .padding(horizontal = 10.dp, vertical = 6.dp),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Row(
+                        Box(
                             modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 10.dp, vertical = 6.dp),
-                            horizontalArrangement = Arrangement.Center,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(Icons.Rounded.SettingsInputAntenna, contentDescription = null, tint = themeColor, modifier = Modifier.size(15.dp))
-                            Spacer(modifier = Modifier.size(5.dp))
-                            Text(
-                                text = "القناة: CH %02d".format(selectedChannel),
-                                fontFamily = JetBrainsMonoFontFamily,
-                                style = MaterialTheme.typography.labelSmall,
-                                fontWeight = FontWeight.Bold,
-                                color = GlassWhite
-                            )
-                        }
-                    }
-
-                    LiquidGlassSurface(
-                        modifier = Modifier
-                            .weight(1f)
-                            .testTag("member_status_button")
-                            .clickable(onClick = onPickStatus),
-                        shape = RoundedCornerShape(14.dp),
-                        accentColor = LuminousEmerald,
-                        tintAlpha = 0.14f,
-                        borderAlpha = 0.32f
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 10.dp, vertical = 6.dp),
-                            horizontalArrangement = Arrangement.Center,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(7.dp)
-                                    .clip(CircleShape)
-                                    .background(LuminousEmerald)
-                            )
-                            Spacer(modifier = Modifier.size(5.dp))
-                            Text(
-                                text = "الحالة: $memberStatus",
-                                style = MaterialTheme.typography.labelSmall,
-                                fontWeight = FontWeight.Bold,
-                                color = GlassWhite,
-                                maxLines = 1
-                            )
-                        }
+                                .size(7.dp)
+                                .clip(CircleShape)
+                                .background(LuminousEmerald)
+                        )
+                        Spacer(modifier = Modifier.size(5.dp))
+                        Text(
+                            text = "الحالة: $memberStatus",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = GlassWhite,
+                            maxLines = 1
+                        )
                     }
                 }
             } else {

@@ -26,6 +26,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.credentials.CredentialManager
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.service.RadioSessionManager
 import com.example.ui.HardwarePttBridge
 import com.example.ui.WalkieTalkieScreen
 import com.example.ui.WalkieTalkieViewModel
@@ -153,6 +154,7 @@ private fun AppContent(maxRefreshRate: Int) {
             WalkieTalkieScreen(
                 viewModel = vm,
                 onSignOutClick = {
+                    RadioSessionManager.shutdownCurrentSession(context)
                     signOut(credentialManager = credentialManager, scope = scope)
                 }
             )

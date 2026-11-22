@@ -6,8 +6,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -16,27 +14,20 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.BarChart
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.DirectionsCar
 import androidx.compose.material.icons.rounded.DoNotDisturbOn
-import androidx.compose.material.icons.rounded.Remove
-import androidx.compose.material.icons.rounded.SettingsInputAntenna
 import androidx.compose.material.icons.rounded.VolumeOff
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -54,133 +45,6 @@ import com.example.ui.theme.ObsidianSurface
 import com.example.ui.theme.RubyCrimson
 import com.example.ui.theme.TextPrimary
 import com.example.ui.theme.TextSecondary
-
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-fun ChannelPickerDialog(
-    currentChannel: Int,
-    onSelectChannel: (Int) -> Unit,
-    onDismiss: () -> Unit
-) {
-    val accent = LocalGlassAccent.current.primary
-    var tempChannel by remember(currentChannel) { mutableIntStateOf(currentChannel.coerceIn(1, 99)) }
-    val presets = listOf(1, 2, 3, 5, 7, 10, 15, 20, 50, 99)
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        containerColor = ObsidianSurface,
-        icon = {
-            Icon(
-                imageVector = Icons.Rounded.SettingsInputAntenna,
-                contentDescription = null,
-                tint = accent,
-                modifier = Modifier.size(28.dp)
-            )
-        },
-        title = {
-            Text(
-                text = "اختيار القناة الفرعية",
-                color = TextPrimary,
-                fontWeight = FontWeight.Bold
-            )
-        },
-        text = {
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(18.dp)
-                ) {
-                    IconButton(
-                        onClick = { if (tempChannel > 1) tempChannel-- },
-                        modifier = Modifier
-                            .size(44.dp)
-                            .clip(CircleShape)
-                            .background(GlassWhite.copy(alpha = 0.1f))
-                    ) {
-                        Icon(Icons.Rounded.Remove, contentDescription = "قناة أقل", tint = GlassWhite)
-                    }
-
-                    Text(
-                        text = "CH %02d".format(tempChannel),
-                        fontFamily = JetBrainsMonoFontFamily,
-                        style = MaterialTheme.typography.headlineMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = accent
-                    )
-
-                    IconButton(
-                        onClick = { if (tempChannel < 99) tempChannel++ },
-                        modifier = Modifier
-                            .size(44.dp)
-                            .clip(CircleShape)
-                            .background(GlassWhite.copy(alpha = 0.1f))
-                    ) {
-                        Icon(Icons.Rounded.Add, contentDescription = "قناة أعلى", tint = GlassWhite)
-                    }
-                }
-
-                Text(
-                    text = "يسمعك فقط من يختار نفس القناة داخل الغرفة (CH 01–99).",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = TextSecondary
-                )
-
-                FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    presets.forEach { ch ->
-                        val selected = tempChannel == ch
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(if (selected) accent else GlassWhite.copy(alpha = 0.08f))
-                                .border(
-                                    width = 1.dp,
-                                    color = if (selected) accent else GlassWhite.copy(alpha = 0.18f),
-                                    shape = RoundedCornerShape(12.dp)
-                                )
-                                .clickable { tempChannel = ch }
-                                .padding(horizontal = 12.dp, vertical = 7.dp)
-                        ) {
-                            Text(
-                                text = "CH %02d".format(ch),
-                                fontFamily = JetBrainsMonoFontFamily,
-                                style = MaterialTheme.typography.labelMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = if (selected) ObsidianDeep else TextPrimary
-                            )
-                        }
-                    }
-                }
-            }
-        },
-        confirmButton = {
-            Button(
-                onClick = {
-                    onSelectChannel(tempChannel)
-                    onDismiss()
-                },
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = accent,
-                    contentColor = ObsidianDeep
-                ),
-                shape = RoundedCornerShape(12.dp)
-            ) {
-                Text("تفعيل CH %02d".format(tempChannel), fontWeight = FontWeight.Bold)
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("إلغاء", color = TextSecondary)
-            }
-        }
-    )
-}
 
 data class StatusOption(
     val label: String,

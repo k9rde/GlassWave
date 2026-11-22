@@ -526,7 +526,7 @@ fun SettingsScreen(
 
                         SettingsToggleRow(
                             icon = Icons.Rounded.RecordVoiceOver,
-                            title = "أولوية المتحدث (قفل القناة)",
+                            title = "أولوية المتحدث (منع المقاطعة)",
                             subtitle = "منع مقاطعة المتحدث الحالي أثناء الإرسال",
                             checked = room.channelLockEnabled,
                             onCheckedChange = { _ ->
@@ -643,15 +643,31 @@ fun SettingsScreen(
                         viewModel.updateSettings { it.copy(keepScreenOn = checked) }
                     }
                 )
-                SettingsToggleRow(
-                    icon = Icons.Rounded.Headset,
-                    title = "الاستماع بالخلفية",
-                    subtitle = "إبقاء الاستماع نشطاً مع إشعار دائم عند إغلاق الشاشة",
-                    checked = state.settings.backgroundListeningEnabled,
-                    onCheckedChange = { checked ->
-                        viewModel.updateSettings { it.copy(backgroundListeningEnabled = checked) }
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(LuminousEmerald.copy(alpha = 0.12f))
+                        .border(1.dp, LuminousEmerald.copy(alpha = 0.35f), RoundedCornerShape(14.dp))
+                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Icon(Icons.Rounded.Headset, contentDescription = null, tint = LuminousEmerald, modifier = Modifier.size(22.dp))
+                    Column {
+                        Text(
+                            text = "العمل الدائم بالخلفية (مُفعّل تلقائياً)",
+                            color = GlassWhite,
+                            style = MaterialTheme.typography.bodyLarge,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = "يبقى الاتصال نشطاً وتسمع الغرفة حتى لو انتقلت لتطبيق آخر أو أغلقت النافذة من التطبيقات المفتوحة — يتوقف فقط بالضغط على «إغلاق دائم».",
+                            color = TextSecondary,
+                            style = MaterialTheme.typography.bodySmall
+                        )
                     }
-                )
+                }
                 SettingsToggleRow(
                     icon = Icons.Rounded.VolumeUp,
                     title = "التحدث بزر الصوت",

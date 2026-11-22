@@ -16,6 +16,8 @@
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <uses-feature
@@ -46,11 +48,13 @@
         <service
             android:name=".service.RadioForegroundService"
             android:exported="false"
-            android:foregroundServiceType="mediaPlayback" />
+            android:stopWithTask="false"
+            android:foregroundServiceType="mediaPlayback|microphone" />
 
         <service
             android:name=".service.FloatingPttService"
-            android:exported="false" />
+            android:exported="false"
+            android:stopWithTask="false" />
 
         <provider
             android:name="androidx.core.content.FileProvider"

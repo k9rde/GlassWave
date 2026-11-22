@@ -67,7 +67,15 @@ class WalkieTalkieAudioEngine {
         isMutedCompletely = muted
         if (muted) {
             stopTransmitting(playTone = false)
+            receiveDecayJob?.cancel()
             _isReceiving.value = false
+            synchronized(playbackLock) {
+                try {
+                    playbackTrack?.stop()
+                    playbackTrack?.release()
+                } catch (_: Exception) {}
+                playbackTrack = null
+            }
         }
     }
 

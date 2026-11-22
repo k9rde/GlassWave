@@ -1,5 +1,6 @@
 package com.example.service
 
+import android.Manifest
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -7,42 +8,100 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
 import com.example.MainActivity
 import com.example.R
 
 /**
- * Foreground service that keeps GlassWave alive in the background so users can
- * continue receiving voice broadcasts with a persistent control notification.
+ * Foreground service that keeps GlassWave alive even when swiped away from Recent Apps
+ * or while using other apps. Only stops when ALWAYS_OFF ("إغلاق دائم") is activated.
  */
 class RadioForegroundService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (intent?.action == ACTION_STOP) {
+        if (intent?.action == ACTION_ALWAYS_OFF) {
+            RadioSessionManager.enterAlwaysOff(applicationContext)
             stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf()
             return START_NOT_STICKY
         }
 
-        val roomName = intent?.getStringExtra(EXTRA_ROOM_NAME).orEmpty().ifBlank { "غرفة لاسلكي" }
+        // Handle sticky system restarts cleanly: reconnect session unless ALWAYS_OFF
+        val isStickyRestart = intent == null
+        if (isStickyRestart) {
+            RadioSessionManager.ensureInitialized(applicationContext)
+            if (!RadioSessionManager.shouldStayAliveInBackground()) {
+                stopForeground(STOP_FOREGROUND_REMOVE)
+                stopSelf()
+                return START_NOT_STICKY
+            }
+        }
+
+        val roomName = intent?.getStringExtra(EXTRA_ROOM_NAME)
+            ?.takeIf { it.isNotBlank() }
+            ?: RadioSessionManager.activeRoomNameOrDefault()
+
         ensureChannel()
         val notification = buildNotification(roomName)
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            startForeground(
-                NOTIFICATION_ID,
-                notification,
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
-            )
-        } else {
-            startForeground(NOTIFICATION_ID, notification)
+        if (!startForegroundCompat(notification, allowMicType = !isStickyRestart)) {
+            stopSelf()
+            return START_NOT_STICKY
         }
         return START_STICKY
+    }
+
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        // Keep running in background when user swipes app from Recent Apps unless ALWAYS_OFF
+        if (!RadioSessionManager.shouldStayAliveInBackground()) {
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            stopSelf()
+        }
+        super.onTaskRemoved(rootIntent)
+    }
+
+    private fun startForegroundCompat(notification: Notification, allowMicType: Boolean): Boolean {
+        return try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                val hasMic = ContextCompat.checkSelfPermission(
+                    this,
+                    Manifest.permission.RECORD_AUDIO
+                ) == PackageManager.PERMISSION_GRANTED
+                val fgsType = if (allowMicType && hasMic) {
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK or
+                        ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+                } else {
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
+                }
+                try {
+                    startForeground(NOTIFICATION_ID, notification, fgsType)
+                } catch (_: SecurityException) {
+                    startForeground(
+                        NOTIFICATION_ID,
+                        notification,
+                        ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
+                    )
+                }
+            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                startForeground(
+                    NOTIFICATION_ID,
+                    notification,
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
+                )
+            } else {
+                startForeground(NOTIFICATION_ID, notification)
+            }
+            true
+        } catch (_: Exception) {
+            false
+        }
     }
 
     private fun ensureChannel() {
@@ -51,10 +110,10 @@ class RadioForegroundService : Service() {
             if (manager.getNotificationChannel(CHANNEL_ID) == null) {
                 val channel = NotificationChannel(
                     CHANNEL_ID,
-                    "الاستماع بالخلفية",
+                    "البث والاستماع الدائم",
                     NotificationManager.IMPORTANCE_LOW
                 ).apply {
-                    description = "إشعار دائم لإبقاء الاستماع اللاسلكي نشطاً في الخلفية"
+                    description = "يبقي الاتصال الصوتي نشطاً في الخلفية حتى الضغط على إغلاق دائم"
                 }
                 manager.createNotificationChannel(channel)
             }
@@ -73,7 +132,7 @@ class RadioForegroundService : Service() {
         )
 
         val stopIntent = Intent(this, RadioForegroundService::class.java).apply {
-            action = ACTION_STOP
+            action = ACTION_ALWAYS_OFF
         }
         val stopPending = PendingIntent.getService(
             this,
@@ -84,18 +143,18 @@ class RadioForegroundService : Service() {
 
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.mipmap.ic_launcher)
-            .setContentTitle("GlassWave • متصل بالخلفية")
-            .setContentText("الاستماع نشط في غرفة: $roomName")
+            .setContentTitle("GlassWave • الاتصال نشط بالخلفية")
+            .setContentText("غرفة: $roomName • ينقطع فقط عند الضغط على إغلاق دائم")
             .setOngoing(true)
             .setContentIntent(openPending)
-            .addAction(0, "إيقاف", stopPending)
+            .addAction(0, "إغلاق دائم", stopPending)
             .build()
     }
 
     companion object {
         private const val CHANNEL_ID = "glasswave_bg_radio"
         private const val NOTIFICATION_ID = 2601
-        private const val ACTION_STOP = "com.example.glasswave.STOP_BG_RADIO"
+        private const val ACTION_ALWAYS_OFF = "com.example.glasswave.ALWAYS_OFF_RADIO"
         private const val EXTRA_ROOM_NAME = "room_name"
 
         fun start(context: Context, roomName: String) {
